@@ -43,7 +43,7 @@
 
 /** Version of code in string form. See TSK_VERSION_NUM for
  * integer form. */
-#define TSK_VERSION_STR "4.11.1"
+#define TSK_VERSION_STR "4.11.1-iped-patch"
 
 
 /* include the TSK-specific header file that we created in autoconf
