@@ -13026,6 +13026,8 @@ public class SleuthkitCase {
 			config.setSynchronous(SQLiteConfig.SynchronousMode.OFF); // Reduce I/O operations, we have no OS crash recovery anyway.
 			config.setReadUncommited(true);
 			config.enforceForeignKeys(true); // Enforce foreign key constraints.
+			//iped patch
+			config.setBusyTimeout(3600000);
 			SQLiteDataSource unpooled = new SQLiteDataSource(config);
 			unpooled.setUrl("jdbc:sqlite:" + dbPath);
 			setPooledDataSource((PooledDataSource) DataSources.pooledDataSource(unpooled, configurationOverrides));

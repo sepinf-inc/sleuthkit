@@ -799,6 +799,9 @@ class CaseDatabaseFactory {
 				stmt.execute(PRAGMA_ENCODING_UTF8);
 				stmt.execute(PRAGMA_PAGE_SIZE_4096);
 				stmt.execute(PRAGMA_FOREIGN_KEYS_ON);
+				//iped patch
+                stmt.execute("PRAGMA busy_timeout = 3600000");
+
 			} catch (SQLException ex) {
 				throw new TskCoreException("Error setting pragmas", ex);
 			}
