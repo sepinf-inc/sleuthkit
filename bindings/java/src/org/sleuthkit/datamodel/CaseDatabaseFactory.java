@@ -353,8 +353,10 @@ class CaseDatabaseFactory {
 			stmt.execute("CREATE INDEX attrsArtifactID ON blackboard_attributes(artifact_id)");
 			
 			//file type indexes
-			stmt.execute("CREATE INDEX mime_type ON tsk_files(dir_type,mime_type,type)");
-			stmt.execute("CREATE INDEX file_extension ON tsk_files(extension)");
+			//iped-patch
+			//stmt.execute("CREATE INDEX mime_type ON tsk_files(dir_type,mime_type,type)");
+			//stmt.execute("CREATE INDEX file_extension ON tsk_files(extension)");
+			//stmt.execute("CREATE INDEX findParent ON tsk_files(meta_addr, fs_obj_id, parent_path, name)");
 			
 			// account indexes
 			stmt.execute("CREATE INDEX relationships_account1 ON account_relationships(account1_id)");

@@ -89,6 +89,8 @@ public final class TimelineManager {
 	private static final Set<Integer> ARTIFACT_TYPE_IDS = Stream.of(BlackboardArtifact.ARTIFACT_TYPE.values())
 			.map(artType -> artType.getTypeID())
 			.collect(Collectors.toSet());
+			
+	private static final boolean ipedPatch = true;
 
 	private final SleuthkitCase caseDB;
 
@@ -587,6 +589,10 @@ public final class TimelineManager {
 				TimelineEventType.FILE_CHANGED, file.getCtime(),
 				TimelineEventType.FILE_MODIFIED, file.getMtime());
 
+		if (ipedPatch) {
+			return Collections.emptySet();
+		}
+
 		/*
 		 * If there are no legitimate ( greater than zero ) time stamps skip the
 		 * rest of the event generation.
@@ -653,6 +659,10 @@ public final class TimelineManager {
 	 */
 	Set<TimelineEvent> addArtifactEvents(BlackboardArtifact artifact) throws TskCoreException {
 		Set<TimelineEvent> newEvents = new HashSet<>();
+		
+		if (ipedPatch) {
+			return newEvents;
+		}
 
 		/*
 		 * If the artifact is a TSK_TL_EVENT, use the TSK_TL_EVENT_TYPE
@@ -801,6 +811,10 @@ public final class TimelineManager {
 	 */
 	private Optional<TimelineEvent> addArtifactEvent(TimelineEventDescriptionWithTime eventPayload,
 			TimelineEventType eventType, BlackboardArtifact artifact) throws TskCoreException, DuplicateException {
+				
+		if (ipedPatch) {
+			return Optional.empty();
+		}
 
 		if (eventPayload == null) {
 			return Optional.empty();
