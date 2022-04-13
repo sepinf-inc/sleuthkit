@@ -388,13 +388,17 @@ public class SleuthkitCase {
 			initReviewStatuses(connection);
 			initEncodingTypes(connection);
 			populateHasChildrenMap(connection);
-			updateExaminers(connection);
+			//iped-patch
+			if (canWrite(dbPath))
+			    updateExaminers(connection);
 			initDBSchemaCreationVersion(connection);
 		}
 
 		fileManager = new FileManager(this);
 		communicationsMgr = new CommunicationsManager(this);
-		timelineMgr = new TimelineManager(this);
+		//iped-patch
+		if (canWrite(dbPath))
+		    timelineMgr = new TimelineManager(this);
 		dbAccessManager = new CaseDbAccessManager(this);
 		taggingMgr = new TaggingManager(this);
 		scoringManager = new ScoringManager(this);
@@ -404,6 +408,19 @@ public class SleuthkitCase {
 		personManager = new PersonManager(this);
 		hostAddressManager = new HostAddressManager(this);
 	}
+	
+	private static boolean canWrite(String dbPath) {
+	    File file = new File(dbPath);
+        if (!file.exists()) {
+            return false;
+        }
+        try (FileOutputStream fos = new FileOutputStream(file, true)) {
+            return true;
+
+        } catch (IOException e) {
+            return false;
+        }
+    }
 
 	/**
 	 * Returns a set of core table names in the SleuthKit Case database.
