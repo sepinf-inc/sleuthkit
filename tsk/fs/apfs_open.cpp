@@ -36,7 +36,11 @@ char* getEnvPassword(TSK_IMG_INFO * m_img_info) {
 	}
 	
 	char passkey[1024];
-	size_t len = wcstombs(passkey, name, 1024 - 9);
+#ifdef TSK_WIN32
+	wcstombs(passkey, name, 1024 - 9);
+#else
+	strncpy(passkey, name, 1024 - 9);
+#endif
 	strcat(passkey, "_PASSWORD");
 
 	char* password = getenv(passkey);
