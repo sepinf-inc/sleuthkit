@@ -152,7 +152,12 @@ final class WindowsAccountUtils {
 		
 		// All the prefixes in the range S-1-5-80 to S-1-5-111 are special
 		tempSID = tempSID.replaceFirst(DOMAIN_SID_PREFIX + "-", "");
-		String subAuthStr = tempSID.substring(0, tempSID.indexOf('-'));
+		int end = tempSID.indexOf('-');
+		if (end == -1) {
+		    // Unknown SID with just 4 components. Should this return true instead?
+		    return false;
+		}
+		String subAuthStr = tempSID.substring(0, end);
 		Integer subAuth = Optional.ofNullable(subAuthStr).map(Integer::valueOf).orElse(0);
 		if (subAuth >= 80 && subAuth <= 111) {
 			return true;
