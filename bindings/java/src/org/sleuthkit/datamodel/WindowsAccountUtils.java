@@ -117,6 +117,7 @@ final class WindowsAccountUtils {
 	// Some windows SID indicate special account.
 	// These should be handled differently from regular user accounts.
 	private static final Map<String, String> SPECIAL_SIDS_MAP =  ImmutableMap.<String, String>builder() 
+	        .put("S-1-5-17", "IIS Default Account")
 			.put("S-1-5-18", "Local System Account")
 			.put("S-1-5-19", "Local Service Account")
 			.put("S-1-5-20", "Network Service Account")
