@@ -480,23 +480,23 @@ TskAuto::findFilesInPool(TSK_OFF_T start, TSK_POOL_TYPE_ENUM ptype)
             }
 
             if (filterRetval != TSK_FILTER_SKIP) {
-                TSK_IMG_INFO *pool_img = pool->get_img_info(pool, vol_info->block);
-                if (pool_img != NULL) {
-                    TSK_FS_INFO *fs_info = apfs_open(pool_img, 0, TSK_FS_TYPE_APFS, "");
+                TSK_IMG_INFO *pool_vol_img = pool->get_img_info(pool, vol_info->block);
+                if (pool_vol_img != NULL) {
+                    TSK_FS_INFO *fs_info = apfs_open(pool_vol_img, 0, TSK_FS_TYPE_APFS, "");
                     // iped-patch init
                     if (!fs_info) {
                         // Try again with supplied password if it has failed with empty password. 
                         // This is needed to support encrypted APFS pools.
-                        fs_info = apfs_open(pool_img, 0, TSK_FS_TYPE_APFS, m_fileSystemPassword.c_str());
+                        fs_info = apfs_open(pool_vol_img, 0, TSK_FS_TYPE_APFS, m_fileSystemPassword.c_str());
                     }
                     // iped-patch end
                     if (fs_info) {
                         TSK_RETVAL_ENUM retval = findFilesInFsInt(fs_info, fs_info->root_inum);
                         tsk_fs_close(fs_info);
 
-                        // TODO: what if retval != TSK_STOP, shouldn't pool_img be closed?
+                        // TODO: what if retval != TSK_STOP, shouldn't pool_vol_img be closed?
                         if (retval == TSK_STOP) {
-                            tsk_img_close(pool_img);
+                            tsk_img_close(pool_vol_img);
                             tsk_pool_close(pool);
                             return TSK_STOP;
                         }
@@ -515,9 +515,12 @@ TskAuto::findFilesInPool(TSK_OFF_T start, TSK_POOL_TYPE_ENUM ptype)
                                 "findFilesInPool: Error opening APFS file system");
                             registerError();
                         }
+                        tsk_img_close(pool_vol_img);
+                        tsk_pool_close(pool);
+                        return TSK_ERR;
                     }
 
-                    tsk_img_close(pool_img);
+                    tsk_img_close(pool_vol_img);
                 }
                 else {
                     tsk_pool_close(pool);
@@ -544,8 +547,8 @@ TskAuto::findFilesInPool(TSK_OFF_T start, TSK_POOL_TYPE_ENUM ptype)
                 return TSK_STOP;
             }
 
-            TSK_IMG_INFO *pool_img = pool->get_img_info(pool, vol_info->block);
-            if (pool_img == NULL) {
+            TSK_IMG_INFO *pool_vol_img = pool->get_img_info(pool, vol_info->block);
+            if (pool_vol_img == NULL) {
                 tsk_pool_close(pool);
                 tsk_error_set_errstr2(
                     "findFilesInPool: Error opening LVM logical volume: %" PRIdOFF "",
@@ -553,9 +556,9 @@ TskAuto::findFilesInPool(TSK_OFF_T start, TSK_POOL_TYPE_ENUM ptype)
                 registerError();
                 return TSK_ERR;
             }
-            TSK_FS_INFO *fs_info = tsk_fs_open_img(pool_img, 0, TSK_FS_TYPE_DETECT);
+            TSK_FS_INFO *fs_info = tsk_fs_open_img(pool_vol_img, 0, TSK_FS_TYPE_DETECT);
             if (fs_info == NULL) {
-                tsk_img_close(pool_img);
+                tsk_img_close(pool_vol_img);
                 tsk_pool_close(pool);
                 tsk_error_set_errstr2(
                     "findFilesInPool: Unable to open file system in LVM logical volume: %" PRIdOFF "",
@@ -566,7 +569,7 @@ TskAuto::findFilesInPool(TSK_OFF_T start, TSK_POOL_TYPE_ENUM ptype)
             TSK_RETVAL_ENUM retval = findFilesInFsInt(fs_info, fs_info->root_inum);
 
             tsk_fs_close(fs_info);
-            tsk_img_close(pool_img);
+            tsk_img_close(pool_vol_img);
 
             if (retval == TSK_STOP) {
                 tsk_pool_close(pool);
