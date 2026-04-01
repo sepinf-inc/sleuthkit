@@ -91,7 +91,15 @@ Status  : Copyright (C) Ross Williams, 1993. However, permission is
 #ifndef DONE_STYLE
 
 typedef unsigned long   ulong;
+// iped-patch init
+#ifndef __cplusplus
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
+#include <stdbool.h>
+#elif !defined(bool)
 typedef unsigned        bool;
+#endif
+#endif
+// iped-patch end
 typedef unsigned char * p_ubyte_;
 
 #ifndef TRUE

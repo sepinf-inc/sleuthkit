@@ -14,7 +14,15 @@
 
 #if HAVE_LIBAFFLIB
 
+// iped-patch init
+#ifndef __cplusplus
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
+#include <stdbool.h>
+#elif !defined(bool)
 typedef int bool;
+#endif
+#endif
+// iped-patch end
 
 #include "aff.h"
 
