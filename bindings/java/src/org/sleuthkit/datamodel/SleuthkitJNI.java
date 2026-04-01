@@ -1211,6 +1211,7 @@ public class SleuthkitJNI {
 	 * 
 	 * @param imgHandle pointer to imgHandle in sleuthkit
 	 * @param fsOffset  byte offset to the file system
+	 * @param password  image password
 	 * @param poolHandle pointer to the pool info handle
 	 * @param poolBlock  pool block
 	 * @param skCase    the case containing the file system
@@ -1220,7 +1221,7 @@ public class SleuthkitJNI {
 	 * @throws TskCoreException exception thrown if critical error occurs within
 	 *                          TSK
 	 */
-	static long openFsPool(long imgHandle, long fsOffset, long poolHandle, long poolBlock, SleuthkitCase skCase) throws TskCoreException {
+	static long openFsPool(long imgHandle, long fsOffset, String password, long poolHandle, long poolBlock, SleuthkitCase skCase) throws TskCoreException {
 		/*
 		 * Currently, our APFS code is not thread-safe and it is the only code
 		 * that uses pools. To prevent crashes, we make any reads to a file system
@@ -1247,7 +1248,12 @@ public class SleuthkitJNI {
 				} else {
 					long poolImgHandle = getImgInfoForPoolNat(poolHandle, poolBlock);
 					HandleCache.getCaseHandles(caseIdentifier).poolImgCache.add(poolImgHandle);
-					fsHandle = openFsNat(poolImgHandle, fsOffset);
+					// iped-patch: use supplied password to open the file system if it exists. This is needed to support encrypted APFS pools.
+					if (password != null) {
+						fsHandle = openFsDecryptNat(poolImgHandle, fsOffset, password);
+					} else {
+						fsHandle = openFsNat(poolImgHandle, fsOffset);
+					}
 					//cache it
 					imgOffSetToFsHandle.put(poolBlock, fsHandle);
 					HandleCache.getCaseHandles(caseIdentifier).poolFsList.add(fsHandle);

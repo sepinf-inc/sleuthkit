@@ -118,7 +118,9 @@ public class FileSystem extends AbstractContent {
 						if (poolVolume == null) {
 							throw new TskCoreException("File system is in a pool but has no volume");
 						}
-						filesystemHandle = SleuthkitJNI.openFsPool(image.getImageHandle(), imgOffset, pool.getPoolHandle(), poolVolume.getStart(), getSleuthkitCase());
+						// iped-patch: pass the image password to the native method to open the file system
+						String password = getImagePasswordFromSettings(image.getAcquisitionToolSettings());
+						filesystemHandle = SleuthkitJNI.openFsPool(image.getImageHandle(), imgOffset, password, pool.getPoolHandle(), poolVolume.getStart(), getSleuthkitCase());
 					} else {
 						String password = getImagePasswordFromSettings(image.getAcquisitionToolSettings());
 						filesystemHandle = SleuthkitJNI.openFs(image.getImageHandle(), imgOffset, password, getSleuthkitCase());
