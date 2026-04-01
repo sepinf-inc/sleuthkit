@@ -484,6 +484,13 @@ TskAuto::findFilesInPool(TSK_OFF_T start, TSK_POOL_TYPE_ENUM ptype)
                 TSK_IMG_INFO *pool_img = pool->get_img_info(pool, vol_info->block);
                 if (pool_img != NULL) {
                     TSK_FS_INFO *fs_info = apfs_open(pool_img, 0, TSK_FS_TYPE_APFS, "");
+                    // iped-patch init
+                    if (!fs_info) {
+                        // Try again with supplied password if it has failed with empty password. 
+                        // This is needed to support encrypted APFS pools.
+                        fs_info = apfs_open(pool_img, 0, TSK_FS_TYPE_APFS, m_fileSystemPassword.c_str());
+                    }
+                    // iped-patch end
                     if (fs_info) {
                         TSK_RETVAL_ENUM retval = findFilesInFsInt(fs_info, fs_info->root_inum);
                         tsk_fs_close(fs_info);
