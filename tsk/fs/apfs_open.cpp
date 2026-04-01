@@ -45,6 +45,12 @@ TSK_FS_INFO* apfs_open(TSK_IMG_INFO * img_info, TSK_OFF_T offset,
     return nullptr;
   }
 
+#ifndef HAVE_LIBOPENSSL
+  if (pass != nullptr && strlen(pass) > 0) {
+    tsk_printf("Warn: APFS encryption is not supported in this build. Please recompile with OpenSSL support to use this feature.\n");
+  }
+#endif
+
   try {
     auto fs = new APFSFSCompat(img_info, pool_img->pool_info, pool_img->pvol_block, pass);
     return &fs->fs_info();
