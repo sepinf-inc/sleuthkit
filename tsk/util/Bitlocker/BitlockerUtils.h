@@ -13,6 +13,7 @@
 #ifdef HAVE_LIBMBEDTLS
 
 #include <string>
+#include <cstdint> // iped-patch
 
 using namespace std;
 
