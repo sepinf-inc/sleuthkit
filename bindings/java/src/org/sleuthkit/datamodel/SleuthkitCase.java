@@ -44,6 +44,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -473,46 +474,18 @@ public class SleuthkitCase {
 
 	// iped-patch
 	private static boolean canWriteDatabase(String dbPath) {
-		File dbFile = new File(dbPath);
-		Path path = dbFile.toPath();
+		Path path = Paths.get(dbPath);
 
-		// 1. OS-Level Check: Does the file exist and does the current user
-		// have the 'Writable' attribute assigned by the OS/Filesystem?
 		if (!Files.exists(path) || !Files.isWritable(path)) {
 			return false;
 		}
 
-		// 2. Directory Check: SQLite requires folder-level write/delete
-		// permissions to manage rollback journals (-journal) or WAL files.
-		// This is especially critical for SMB shares where file-level
-		// permissions may differ from directory-level permissions.
-		File parentDir = dbFile.getParentFile();
-		if (parentDir == null || !parentDir.canWrite()) {
+		try (OutputStream os = Files.newOutputStream(path, StandardOpenOption.WRITE)) {
+			return true;
+
+		} catch (IOException e) {
 			return false;
 		}
-
-		// 3. Engine-Level Check: Ask SQLite if the database is internally
-		// read-only (e.g., due to recovery mode, locking, or media write-protection).
-		String url = "jdbc:sqlite:" + dbPath;
-
-		// Set a busy_timeout for network shares to handle transient locks gracefully.
-		Properties props = new Properties();
-		props.setProperty("busy_timeout", "3000");
-
-		try (Connection conn = DriverManager.getConnection(url, props);
-				Statement stmt = conn.createStatement();
-				ResultSet rs = stmt.executeQuery("PRAGMA query_only;")) {
-
-			if (rs.next()) {
-				// query_only = 0 (false) means the database engine permits writes.
-				return rs.getInt(1) == 0;
-			}
-		} catch (Exception e) {
-			// Includes Connection errors (e.g., WAL mode incompatible with SMB)
-			// or SQL errors (e.g., database file is locked/corrupt).
-			return false;
-		}
-		return false;
 	}
 
 	/**
