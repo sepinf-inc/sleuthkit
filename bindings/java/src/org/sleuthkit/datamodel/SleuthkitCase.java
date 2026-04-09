@@ -277,6 +277,11 @@ public class SleuthkitCase {
 
 	private Examiner cachedCurrentExaminer = null;
 
+	// iped-patch init
+	// This map is used to store image paths for cases that are opened in read only mode and therefore can't persist the paths to the database. 
+	private Map<Long, List<String>> transientImagePaths = new HashMap<>();
+	// iped-patch end
+
 	static {
 		Properties p = new Properties(System.getProperties());
 		p.put("com.mchange.v2.log.MLog", "com.mchange.v2.log.FallbackMLog");
@@ -9677,6 +9682,18 @@ public class SleuthkitCase {
 				}
 			}
 
+			// iped-patch init
+			// replace imagePaths with transient
+			if (transientImagePaths.containsKey(id)) {
+				imagePaths.clear();
+				imagePaths.addAll(transientImagePaths.get(id));
+				if (imagePaths.size() > 0) {
+					String path = imagePaths.get(0);
+					name = (new java.io.File(path)).getName();
+				}
+			}
+			// iped-patch end
+
 			return new Image(this, id, type, device_id, ssize, name,
 					imagePaths.toArray(new String[imagePaths.size()]), tzone, md5, sha1, sha256, size);
 		} catch (SQLException ex) {
@@ -10416,6 +10433,15 @@ public class SleuthkitCase {
 					}
 				}
 			}
+			// iped-patch init
+			// replace image paths with transient paths for any images that have them set
+			for (Map.Entry<Long, List<String>> entry : transientImagePaths.entrySet()) {
+				List<String> imagePaths = imgPaths.get(entry.getKey());
+				if (imgPaths.containsKey(entry.getKey())) {
+					imgPaths.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+				}
+			}
+			// iped-patch end
 			return imgPaths;
 		} catch (SQLException ex) {
 			throw new TskCoreException("Error getting image paths.", ex);
@@ -10439,6 +10465,13 @@ public class SleuthkitCase {
 	 *                          core
 	 */
 	private List<String> getImagePathsById(long objectId, CaseDbConnection connection) throws TskCoreException {
+		// iped-patch init
+		// check if we have transient paths for this image and return those if we do
+		if (transientImagePaths.containsKey(objectId)) {
+			return new ArrayList<>(transientImagePaths.get(objectId));
+		}
+		// iped-patch end
+
 		List<String> imagePaths = new ArrayList<>();
 		acquireSingleUserCaseReadLock();
 		Statement statement = null;
@@ -10544,6 +10577,17 @@ public class SleuthkitCase {
 				trans.getConnection().executeUpdate(statement);
 			}
 		} catch (SQLException ex) {
+
+			// iped-patch init
+			// If we get a read only error, it is likely because we are trying to update the image paths of a case that is opened in read only mode. 
+			// In this case, we will save the paths in a transient map so that they can be returned by getImagePaths and getImagePathsById, 
+			// but we won't be able to persist them to the database until the case is opened in read/write mode.
+			if (ex.getMessage().contains("SQLITE_READONLY")) {
+				transientImagePaths.put(objId, new ArrayList<>(paths));
+				return;
+			}
+			// iped-patch end
+
 			throw new TskCoreException("Error updating image paths.", ex);
 		} 
 	}
