@@ -198,7 +198,7 @@ raw_read_segment(IMG_RAW_INFO * raw_info, int idx, char *buf,
         // ReadFile returns TRUE and sets nread to zero.
         // We need to check if we've reached the end of a file and set nread to
         // the number of bytes read.
-        if ((raw_info->is_winobj) && (nread == 0) && (offset_to_read + len_to_read == raw_info->img_info.size)) {
+        if ((raw_info->is_winobj) && (nread == 0) && (offset_to_read + (TSK_OFF_T)len_to_read == raw_info->img_info.size)) {
             nread = (DWORD)len_to_read;
         }
         cnt = (ssize_t) nread;
@@ -215,7 +215,7 @@ raw_read_segment(IMG_RAW_INFO * raw_info, int idx, char *buf,
                 tsk_error_set_errno(TSK_ERR_IMG_WRITE);
                 tsk_error_set_errstr("raw_read: file \"%" PRIttocTSK
                     "\" offset: %" PRIdOFF " tsk_img_writer_add cnt: %" PRIuSIZE " - %d",
-                    raw_info->img_info.images[idx], offset_to_read, cnt
+                    raw_info->img_info.images[idx], offset_to_read, cnt, (int) result
                     );
                 return -1;
             }
@@ -227,10 +227,14 @@ raw_read_segment(IMG_RAW_INFO * raw_info, int idx, char *buf,
         // If we had to do the sector alignment, copy the result into the original buffer and fix
         // the number of bytes read
         if (sector_aligned_buf != NULL) {
-            memcpy(buf, sector_aligned_buf + rel_offset % raw_info->img_info.sector_size, len);
-            cnt = cnt - rel_offset % raw_info->img_info.sector_size;
-            if (cnt < 0) {
-                cnt = -1;
+            ssize_t align_offset = (ssize_t)(rel_offset % raw_info->img_info.sector_size);
+            if (cnt > align_offset) {
+                cnt -= align_offset;
+                if ((size_t)cnt > len)
+                    cnt = (ssize_t)len;
+                memcpy(buf, sector_aligned_buf + align_offset, (size_t)cnt);
+            } else {
+                cnt = 0;
             }
             free(sector_aligned_buf);
         }
@@ -758,6 +762,19 @@ raw_open(int a_num_img, const TSK_TCHAR * const a_images[],
         }
 
         /* add the size of this image to the total and save the current max */
+        if (size > INT64_MAX - img_info->size) {
+            tsk_error_reset();
+            tsk_error_set_errno(TSK_ERR_IMG_ARG);
+            tsk_error_set_errstr("raw_open: image size overflow");
+            free(raw_info->max_off);
+            free(raw_info->cptr);
+            for (i = 0; i < raw_info->img_info.num_img; i++) {
+                free(raw_info->img_info.images[i]);
+            }
+            free(raw_info->img_info.images);
+            tsk_img_free(raw_info);
+            return NULL;
+        }
         img_info->size += size;
         raw_info->max_off[i] = img_info->size;
 

@@ -6,7 +6,7 @@
  *
  * md = sha1_t()
  * string md.hexdigest();
- * md.SIZE		    --- the size of the hash 
+ * md.SIZE		    --- the size of the hash
  * uint8_t md.digest[SIZE]   --- the buffer
  * uint8_t md.final()        --- synonym for md.digest
  */
@@ -23,7 +23,7 @@
 
 #ifdef __APPLE__
 #include <AvailabilityMacros.h>
-#undef DEPRECATED_IN_MAC_OS_X_VERSION_10_7_AND_LATER 
+#undef DEPRECATED_IN_MAC_OS_X_VERSION_10_7_AND_LATER
 #define  DEPRECATED_IN_MAC_OS_X_VERSION_10_7_AND_LATER
 #endif
 
@@ -53,7 +53,7 @@
 class md5_ {
 public:
     static const size_t SIZE=16;
-    uint8_t digest[SIZE];			
+    uint8_t digest[SIZE];
 };
 
 class sha1_ {
@@ -75,7 +75,7 @@ public:
     uint8_t digest[SIZE];
 };
 
-template<typename T> 
+template<typename T>
 class hash__:public T
 {
     static uint8_t hexcharval(char v){
@@ -102,27 +102,38 @@ class hash__:public T
 public:
     hash__(){
     }
+
     hash__(const uint8_t *provided){
-	memcpy(this->digest,provided,this->SIZE);
+        memcpy(this->digest,provided,this->SIZE);
     }
+
     const uint8_t *final() const {
-	return this->digest;
+        return this->digest;
     }
+
     /* python like interface for hexdigest */
     const char *hexdigest(char *hexbuf,size_t bufsize) const {
-	const char *hexbuf_start = hexbuf;
-	for(unsigned int i=0;i<this->SIZE && bufsize>=3;i++){
-	    snprintf(hexbuf,bufsize,"%02x",this->digest[i]);
-	    hexbuf  += 2;
-	    bufsize -= 2;
-	}
-	return hexbuf_start;
+        const char *hexbuf_start = hexbuf;
+        for (unsigned int i=0;i<this->SIZE && bufsize>=3;i++){
+            snprintf(hexbuf,bufsize,"%02x",this->digest[i]);
+            hexbuf  += 2;
+            bufsize -= 2;
+        }
+
+        return hexbuf_start;
     }
+
     std::string hexdigest() const {
-	std::string ret;
-	char buf[this->SIZE*2+1];
-	return std::string(hexdigest(buf,sizeof(buf)));
+        size_t bufsize = this->SIZE * 2 + 1;
+        char *buf = (char *)calloc(bufsize, 1);
+        if (buf == NULL) {
+            return std::string();
+        }
+        auto ret = std::string(hexdigest(buf, bufsize));
+        free(buf);
+        return ret;
     }
+
     /**
      * Convert a hex representation to binary, and return
      * the number of bits converted.
@@ -167,14 +178,14 @@ typedef hash__<sha1_> sha1_t;
 typedef hash__<sha256_> sha256_t;
 typedef hash__<sha512_> sha512_t;
 
-template<typename T> 
+template<typename T>
 class hash_generator__:T { 			/* generates the hash */
     unsigned int ret;
 	void *mdctx;
 	unsigned char *md;
-	int (*md_init)(void *);
-	int (*md_update)(void *, const void *, uint32_t);
-	int (*md_final)(unsigned char *, void *);
+	void (*md_init)(void *);
+	void (*md_update)(void *, const void *, uint32_t);
+	void (*md_final)(unsigned char *, void *);
     bool initialized;	       /* has the context been initialized? */
     bool finalized;
     /* Static function to determine if something is zero */
@@ -193,32 +204,32 @@ public:
 		memset(mdctx,0,sizeof(TSK_MD5_CTX));
 		md=(unsigned char *)malloc(TSK_MD5_DIGEST_LENGTH);
 		memset(md,0,TSK_MD5_DIGEST_LENGTH);
-		md_init	 	= (int(*)(void *))&TSK_MD5_Init;
-    	md_update	= (int (*)(void *, const void *, uint32_t))&TSK_MD5_Update;
-		md_final	= (int (*)(unsigned char*, void *))&TSK_MD5_Final;
+		md_init	 	= (void (*)(void *))&TSK_MD5_Init;
+                md_update	= (void (*)(void *, const void *, uint32_t))&TSK_MD5_Update;
+		md_final	= (void (*)(unsigned char*, void *))&TSK_MD5_Final;
 		break;
-	case 20: 
+	case 20:
 		mdctx = malloc(sizeof(TSK_SHA_CTX));
 		memset(mdctx,0,sizeof(TSK_SHA_CTX));
 		md=(unsigned char *)malloc(TSK_SHA_DIGEST_LENGTH);
 		memset(md,0,TSK_SHA_DIGEST_LENGTH);
-		md_init		= (int(*)(void *))&TSK_SHA_Init;
-		md_update	= (int (*)(void *, const void *, uint32_t))(void (*)())&TSK_SHA_Update;
-		md_final	= (int (*)(unsigned char*, void*))&TSK_SHA_Final;
+		md_init		= (void(*)(void *))&TSK_SHA_Init;
+		md_update	= (void (*)(void *, const void *, uint32_t))(void (*)())&TSK_SHA_Update;
+		md_final	= (void (*)(unsigned char*, void*))&TSK_SHA_Final;
 		break;
-	case 32: 
+	case 32:
 		mdctx = malloc(sizeof(SHA256_CTX));
 		md=(unsigned char *)malloc(SHA256_DIGEST_LENGTH);
-		md_init		= (int(*)(void *))&SHA256_Init;
-		md_update	= (int (*)(void *, const void *, uint32_t))(void (*)())&SHA256_Update;
-		md_final	= (int (*)(unsigned char*, void*))&SHA256_Final;
+		md_init		= (void(*)(void *))&SHA256_Init;
+		md_update	= (void (*)(void *, const void *, uint32_t))(void (*)())&SHA256_Update;
+		md_final	= (void (*)(unsigned char*, void*))&SHA256_Final;
 		break;
 	case 64:
 		mdctx = malloc(sizeof(SHA512_CTX));
 		md=(unsigned char *)malloc(SHA512_DIGEST_LENGTH);
-		md_init		= (int(*)(void *))&SHA512_Init;
-		md_update	= (int (*)(void *, const void *, uint32_t))(void (*)())&SHA512_Update;
-		md_final	= (int (*)(unsigned char*, void*))&SHA512_Final;
+		md_init		= (void(*)(void *))&SHA512_Init;
+		md_update	= (void (*)(void *, const void *, uint32_t))(void (*)())&SHA512_Update;
+		md_final	= (void (*)(unsigned char*, void*))&SHA512_Final;
 		break;
 	default:
 	    assert(0);
@@ -274,7 +285,7 @@ public:
 	g.update(buf,bufsize);
 	return g.final();
     }
-	
+
 #ifdef HAVE_MMAP
     /** Static method allocateor */
     static hash__<T> hash_file(const char *fname){

@@ -118,7 +118,6 @@ static void
         tsk_error_set_errstr("vmdk_image_close: unable to close handle - %s", errmsg);
     }
 
-    libvmdk_handle_free(&(vmdk_info->handle), NULL);
     if( libvmdk_handle_free(&(vmdk_info->handle), &vmdk_error ) != 1 )
     {
         tsk_error_reset();
@@ -172,14 +171,13 @@ vmdk_open(int a_num_img,
             return NULL;
     }
     for (i = 0; i < a_num_img; i++) {
+        size_t img_len = TSTRLEN(a_images[i]) + 1;
         if ((vmdk_info->img_info.images[i] =
-            (TSK_TCHAR *) tsk_malloc((TSTRLEN(a_images[i]) +
-            1) * sizeof(TSK_TCHAR))) == NULL) {
+            (TSK_TCHAR *) tsk_malloc(img_len * sizeof(TSK_TCHAR))) == NULL) {
                 tsk_img_free(vmdk_info);
                 return NULL;
         }
-        TSTRNCPY(vmdk_info->img_info.images[i], a_images[i],
-            TSTRLEN(a_images[i]) + 1);
+        TSTRNCPY(vmdk_info->img_info.images[i], a_images[i], img_len);
     }
 
     if (libvmdk_handle_initialize(&(vmdk_info->handle), &vmdk_error) != 1) {

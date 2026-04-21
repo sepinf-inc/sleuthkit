@@ -189,9 +189,10 @@ fs_attr_put_name(TSK_FS_ATTR * fs_attr, const char *name)
     }
 
     if (fs_attr->name_size < (strlen(name) + 1)) {
-        fs_attr->name = tsk_realloc(fs_attr->name, strlen(name) + 1);
-        if (fs_attr->name == NULL)
+        char *tmp = tsk_realloc(fs_attr->name, strlen(name) + 1);
+        if (tmp == NULL)
             return 1;
+        fs_attr->name = tmp;
         fs_attr->name_size = strlen(name) + 1;
     }
     strncpy(fs_attr->name, name, fs_attr->name_size);
@@ -234,10 +235,10 @@ tsk_fs_attr_set_str(TSK_FS_FILE * a_fs_file, TSK_FS_ATTR * a_fs_attr,
     }
 
     if (a_fs_attr->rd.buf_size < len) {
-        a_fs_attr->rd.buf =
-            (uint8_t *) tsk_realloc((char *) a_fs_attr->rd.buf, len);
-        if (a_fs_attr->rd.buf == NULL)
+        uint8_t *tmp = (uint8_t *) tsk_realloc((char *) a_fs_attr->rd.buf, len);
+        if (tmp == NULL)
             return 1;
+        a_fs_attr->rd.buf = tmp;
         a_fs_attr->rd.buf_size = len;
     }
 
@@ -932,7 +933,7 @@ tsk_fs_attr_walk_nonres(const TSK_FS_ATTR * fs_attr,
 						cnt = tsk_fs_read_block_decrypt
 						(fs, addr + len_idx, buf, fs->block_size, fs_attr_run->crypto_id + len_idx);
 					}
-                    if (cnt != fs->block_size) {
+                    if (cnt != (ssize_t) fs->block_size) {
                         if (cnt >= 0) {
                             tsk_error_reset();
                             tsk_error_set_errno(TSK_ERR_FS_READ);

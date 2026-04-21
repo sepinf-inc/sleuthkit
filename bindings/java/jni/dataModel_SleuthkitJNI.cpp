@@ -212,19 +212,6 @@ castJniFileHandle(JNIEnv * env, jlong ptr)
     return lcl;
 }
 
-static TskCaseDb * 
-castCaseDb(JNIEnv * env, jlong ptr)
-{
-    TskCaseDb *lcl = ((TskCaseDb *) ptr);
-    if (lcl == NULL || lcl->m_tag != TSK_CASE_DB_TAG) {
-        setThrowTskCoreError(env,
-            "Invalid TskCaseDb object");
-        return 0;
-    }
-
-    return lcl;
-}
-
 /**
  * Convert a jstring (UTF-8) to a TCHAR to pass into TSK methods.
  * @param buffer Buffer to store resulting string into
@@ -262,7 +249,7 @@ toTCHAR(JNIEnv * env, TSK_TCHAR * buffer, size_t size, jstring strJ)
 
 #else
     // nothing to convert.  Keep it as UTF8
-    strncpy((char *)&buffer[0], str8, size);
+    snprintf((char *)&buffer[0], size, "%s", str8);
 #endif
 
     env->ReleaseStringUTFChars(strJ, str8);
@@ -336,7 +323,7 @@ JNIEXPORT jint JNICALL
 Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbBeginTransactionNat(
     JNIEnv *env, jclass obj, jint dbHandle)
 {
-    if((size_t)dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return 1;
     }
@@ -361,7 +348,7 @@ JNIEXPORT jint JNICALL
 Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbCommitTransactionNat(
     JNIEnv *env, jclass obj, jint dbHandle)
 {
-    if((size_t)dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return 1;
     }
@@ -386,7 +373,7 @@ JNIEXPORT jint JNICALL
 Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbRollbackTransactionNat(
     JNIEnv *env, jclass obj, jint dbHandle)
 {
-    if((size_t)dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return 1;
     }
@@ -416,7 +403,7 @@ JNIEXPORT jint JNICALL
     jclass obj, jstring filenameJ, jstring hashMd5J, jstring hashSha1J, jstring hashSha256J,
     jstring commentJ, jint dbHandle)
 {
-    if((size_t) dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return 1;
     }
@@ -477,7 +464,7 @@ JNIEXPORT jboolean JNICALL
     Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbIsUpdateableNat(JNIEnv * env,
     jclass obj, jint dbHandle)
 {
-    if((size_t)dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return (jboolean)false;
     }
@@ -503,7 +490,7 @@ JNIEXPORT jboolean JNICALL
     Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbIsReindexableNat(JNIEnv * env,
     jclass obj, jint dbHandle)
 {
-    if((size_t)dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return (jboolean)false;
     }
@@ -529,7 +516,7 @@ JNIEXPORT jstring JNICALL
     Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbPathNat(JNIEnv * env,
     jclass obj, jint dbHandle)
 {
-    if((size_t)dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return NULL;
     }
@@ -566,7 +553,7 @@ JNIEXPORT jstring JNICALL
     Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbIndexPathNat(JNIEnv * env,
     jclass obj, jint dbHandle)
 {
-    if((size_t)dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return NULL;
     }
@@ -607,7 +594,7 @@ JNIEXPORT jboolean JNICALL
     Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbIsIdxOnlyNat(JNIEnv * env,
     jclass obj, jint dbHandle)
 {
-    if((size_t)dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return (jboolean)false;
     }
@@ -631,7 +618,7 @@ JNIEXPORT jboolean JNICALL
 JNIEXPORT jstring JNICALL Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbGetDisplayName
   (JNIEnv * env, jclass obj, jint dbHandle)
 {
-    if((size_t)dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return NULL;
     }
@@ -679,7 +666,7 @@ JNIEXPORT void JNICALL
     Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbClose(JNIEnv * env,
     jclass obj, jint dbHandle) 
 {
-    if((size_t)dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return;
     }
@@ -707,7 +694,7 @@ JNIEXPORT void JNICALL
 JNIEXPORT jboolean JNICALL Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbLookup
 (JNIEnv * env, jclass obj, jstring hash, jint dbHandle) 
 {
-    if ((size_t)dbHandle > hashDbs.size()) {
+    if (dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return (jboolean)false;
     }
@@ -743,7 +730,7 @@ JNIEXPORT jboolean JNICALL Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbLooku
  */
 JNIEXPORT jobject JNICALL Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbLookupVerbose
 (JNIEnv * env, jclass obj, jstring hash, jint dbHandle) {
-    if ((size_t)dbHandle > hashDbs.size()) {
+    if (dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return NULL;
     }
@@ -975,19 +962,26 @@ JNIEXPORT void JNICALL
     // Get pointers to each of the image file names.
     char **imagepaths8 = (char **) tsk_malloc(numImgs * sizeof(char *));
     if (imagepaths8 == NULL) {
+        if (device_id != NULL) {
+            env->ReleaseStringUTFChars(deviceId, device_id);
+        }
         setThrowTskCoreError(env);
         return;
     }
     for (int i = 0; i < numImgs; i++) {
-        jstring jsPath = (jstring) env->GetObjectArrayElement(paths,
-                i);
-        imagepaths8[i] =
-            (char *) env->
-            GetStringUTFChars(jsPath, &isCopy);
+        jstring jsPath = (jstring) env->GetObjectArrayElement(paths, i);
+        imagepaths8[i] = (char *) env->GetStringUTFChars(jsPath, &isCopy);
         if (imagepaths8[i] == NULL) {
             setThrowTskCoreError(env,
                 "runOpenAndAddImgNat: Can't convert path strings.");
-            // @@@ should cleanup here paths that have been converted in imagepaths8[i]
+            for (int j = 0; j < i; j++) {
+                env->ReleaseStringUTFChars(
+                    (jstring)env->GetObjectArrayElement(paths, j), imagepaths8[j]);
+            }
+            free(imagepaths8);
+            if (device_id != NULL) {
+                env->ReleaseStringUTFChars(deviceId, device_id);
+            }
             return;
         }
     }
@@ -1035,7 +1029,9 @@ JNIEXPORT void JNICALL
         env->DeleteLocalRef(jsPath);
     }
     free(imagepaths8);
-    env->ReleaseStringUTFChars(deviceId, (const char *) device_id);
+    if (device_id != NULL) {
+        env->ReleaseStringUTFChars(deviceId, (const char *) device_id);
+    }
 
     // // Must call finishAddImgNat to free the TskAutoDb
 }
@@ -1204,11 +1200,17 @@ JNIEXPORT jlong JNICALL
         return 0;
     }
     for (int i = 0; i < num_imgs; i++) {
-        imagepaths8[i] =
-            (char *)env->
-            GetStringUTFChars((jstring)env->GetObjectArrayElement(paths,
-                i), &isCopy);
-        // @@@ Error check
+        jstring jsPath = (jstring)env->GetObjectArrayElement(paths, i);
+        imagepaths8[i] = (char *)env->GetStringUTFChars(jsPath, &isCopy);
+        if (imagepaths8[i] == NULL) {
+            for (int j = 0; j < i; j++) {
+                env->ReleaseStringUTFChars(
+                    (jstring)env->GetObjectArrayElement(paths, j), imagepaths8[j]);
+            }
+            free(imagepaths8);
+            setThrowTskCoreError(env, "openImgNat: Can't convert path string");
+            return 0;
+        }
     }
 
     // open the image
@@ -2219,6 +2221,10 @@ JNIEXPORT jstring JNICALL
     (JNIEnv * env,jclass obj, jlong dbHandle)
 {
     TskAutoDbJava *tskAuto = ((TskAutoDbJava *) dbHandle);
+    if (!tskAuto || tskAuto->m_tag != TSK_AUTO_TAG) {
+        setThrowTskCoreError(env, "getCurDirNat: Invalid TskAutoDbJava object");
+        return env->NewStringUTF("");
+    }
     const std::string curDir = tskAuto->getCurDir();
     jstring jdir = (*env).NewStringUTF(curDir.c_str());
     return jdir;
@@ -2255,7 +2261,7 @@ JNIEXPORT void JNICALL
 Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbCreateIndexNat (JNIEnv * env,
     jclass obj, jint dbHandle)
 {
-    if((size_t)dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return;
     }
@@ -2296,7 +2302,7 @@ Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbCreateIndexNat (JNIEnv * env,
  */
 JNIEXPORT jboolean JNICALL Java_org_sleuthkit_datamodel_SleuthkitJNI_hashDbIndexExistsNat
   (JNIEnv * env, jclass obj, jint dbHandle) {
-    if((size_t)dbHandle > hashDbs.size()) {
+    if(dbHandle <= 0 || (size_t)dbHandle > hashDbs.size()) {
         setThrowTskCoreError(env, "Invalid database handle");
         return (jboolean)false;
     }
@@ -2458,6 +2464,14 @@ JNIEXPORT jint JNICALL Java_org_sleuthkit_datamodel_SleuthkitJNI_getFinishImageP
 (JNIEnv * env, jclass obj, jlong a_img_info) {
     // Set up the TSK_IMG_INFO object
     TSK_IMG_INFO *img_info = castImgInfo(env, a_img_info);
+    if (img_info == NULL) {
+        // exception already set by castImgInfo
+        return 0;
+    }
+    // IMG_RAW_INFO cast is only valid for raw image type
+    if (img_info->itype != TSK_IMG_TYPE_RAW) {
+        return 0;
+    }
     IMG_RAW_INFO *raw_info = (IMG_RAW_INFO*)img_info;
 
     if (raw_info->img_writer != NULL) {
@@ -2474,10 +2488,18 @@ JNIEXPORT void JNICALL Java_org_sleuthkit_datamodel_SleuthkitJNI_cancelFinishIma
 (JNIEnv * env, jclass obj, jlong a_img_info) {
     // Set up the TSK_IMG_INFO object
     TSK_IMG_INFO *img_info = castImgInfo(env, a_img_info);
+    if (img_info == NULL) {
+        // exception already set by castImgInfo
+        return;
+    }
+    // IMG_RAW_INFO cast is only valid for raw image type
+    if (img_info->itype != TSK_IMG_TYPE_RAW) {
+        return;
+    }
     IMG_RAW_INFO *raw_info = (IMG_RAW_INFO*)img_info;
 
     if (raw_info->img_writer != NULL) {
         raw_info->img_writer->cancelFinish = 1;
     }
-    return ;
+    return;
 }

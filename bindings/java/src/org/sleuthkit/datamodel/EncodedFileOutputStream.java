@@ -41,6 +41,7 @@ public class EncodedFileOutputStream extends BufferedOutputStream {
 	 *
 	 * @throws IOException
 	 */
+	@SuppressWarnings("this-escape")
 	public EncodedFileOutputStream(OutputStream out, TskData.EncodingType type) throws IOException {
 		super(out);
 		this.type = type;
@@ -58,6 +59,7 @@ public class EncodedFileOutputStream extends BufferedOutputStream {
 	 *
 	 * @throws IOException
 	 */
+	@SuppressWarnings("this-escape")
 	public EncodedFileOutputStream(OutputStream out, int size, TskData.EncodingType type) throws IOException {
 		super(out, size);
 		this.type = type;
@@ -71,13 +73,13 @@ public class EncodedFileOutputStream extends BufferedOutputStream {
 	}
 
 	@Override
-	public void write(int b) throws IOException {
+	public synchronized void write(int b) throws IOException {
 		super.write((int) EncodedFileUtil.encodeByte((byte) b, type));
 		encodedDataLength++;
 	}
 
 	@Override
-	public void write(byte[] b,
+	public synchronized void write(byte[] b,
 			int off,
 			int len)
 			throws IOException {

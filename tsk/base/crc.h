@@ -91,16 +91,12 @@ Status  : Copyright (C) Ross Williams, 1993. However, permission is
 #ifndef DONE_STYLE
 
 typedef unsigned long   ulong;
-// iped-patch init
-#ifndef __cplusplus
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
-#include <stdbool.h>
-#elif !defined(bool)
-typedef unsigned        bool;
-#endif
-#endif
-// iped-patch end
 typedef unsigned char * p_ubyte_;
+
+/* bool is a keyword in C++ and in C23; for C99/C11 we need stdbool.h. */
+#ifndef __cplusplus
+#include <stdbool.h>
+#endif
 
 #ifndef TRUE
 #define FALSE 0

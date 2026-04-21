@@ -4,7 +4,7 @@ dnl Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.59)
 
-AC_INIT(sleuthkit, 4.14.0)
+AC_INIT(sleuthkit, 4.15.0)
 m4_include([m4/ax_pthread.m4])
 dnl include the version from 1.12.1. This will work for
 m4_include([m4/cppunit.m4])
@@ -97,6 +97,12 @@ AS_IF([test "x$ax_pthread_ok" = "xyes" && test "x$enable_multithreading" != "xno
 case "$host" in
 *-*-mingw*)
   dnl Adding the native /usr/local is wrong for cross-compiling
+  dnl GCC's format checker does not model the MS-printf %I length modifier
+  dnl (e.g. %Iu for size_t), so it emits false-positive -Wformat warnings
+  dnl for format strings that MSVC itself accepts without complaint.
+  dnl Suppress those warnings for MinGW cross-compile builds only.
+  CFLAGS="$CFLAGS -Wno-format"
+  CXXFLAGS="$CXXFLAGS -Wno-format"
   ;;
 *)
   dnl Not all compilers include /usr/local in the include and link path
@@ -299,10 +305,14 @@ case "$host" in
   ;;
 esac
 
+
 dnl Dependencies for fiwalk
 AC_CHECK_FUNCS([getline])
-AC_SEARCH_LIBS(regexec, [regex], , AC_MSG_ERROR([missing regex]))
+AC_SEARCH_LIBS(regexec, [regex], [ax_regex=yes], [ax_regex=no])
+AM_CONDITIONAL([HAVE_REGEX], [test "x$ax_regex" = "xyes"])
 
+AS_IF([test "x$ax_regex" = "xno"],
+    [AC_MSG_WARN([missing regex -- fiwalk will not be built])])
 
 dnl OpenSSL support for encryption  
 AX_CHECK_OPENSSL(
@@ -373,6 +383,7 @@ Building:
    afflib support:                        $ax_afflib
    libewf support:                        $ax_libewf
    zlib support:                          $ax_zlib
+   fiwalk support:                        $ax_regex
 
    libbfio support:                       $ax_libbfio
    libvhdi support:                       $ax_libvhdi

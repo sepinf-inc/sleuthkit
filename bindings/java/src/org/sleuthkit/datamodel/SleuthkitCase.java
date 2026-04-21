@@ -233,7 +233,8 @@ public class SleuthkitCase {
 	// Lock to serialize access to the bitset.
 	private final ReentrantLock childrenBitSetLock = new ReentrantLock();
 	// Latch to enforce a happens before relation
-	private final CountDownLatch childrenBitSetInitLatch = new CountDownLatch(1);
+	// @@@ UPDATE - REMOVED because everything is now sync
+	//private final CountDownLatch childrenBitSetInitLatch = new CountDownLatch(1);
 	
 
 	private long nextArtifactId; // Used to ensure artifact ids come from the desired range.
@@ -455,7 +456,8 @@ public class SleuthkitCase {
 			initReviewStatuses(connection);
 			initEncodingTypes(connection);
 			initCollectedStatusTypes(connection);
-			populateHasChildrenMap(true);
+			// @@@ UPDATE TO ALLOW CT TO BE ASYNC
+			populateHasChildrenMap(false);
 			//iped-patch
 			if (canWriteDatabase(dbPath))
 			    updateExaminers(connection);
@@ -532,12 +534,13 @@ public class SleuthkitCase {
 	 */
 	boolean getHasChildren(Content content) {
 		
-		try {
+		//try {
 			// Await initialization 
-			childrenBitSetInitLatch.await();
-		} catch (InterruptedException ex) {
-			throw new AssertionError("Interrupted Exception awaiting Children bit set initialization", ex); //NON-NLS
-		}
+			// @@@ UPDATE - REMOVED because everything is now sync
+			//childrenBitSetInitLatch.await();
+		//} catch (InterruptedException ex) {
+		//	throw new AssertionError("Interrupted Exception awaiting Children bit set initialization", ex); //NON-NLS
+		//}
 		childrenBitSetLock.lock();
 		try {
 			long objId = content.getId();
@@ -555,7 +558,11 @@ public class SleuthkitCase {
 	}
 
 	/**
-	 * Add this objId to the list of objects that have children (of any type)
+	 * Add this objId to the list of objects that have children (of any type).
+	 *
+	 * Callers must NOT hold a database lock when calling this
+	 * method. It can cause a deadlock if the async task to load it hasn't 
+	 * started yet. 
 	 *
 	 * @param objId
 	 */
@@ -564,19 +571,33 @@ public class SleuthkitCase {
 	}
 
 	/**
-	 * Add this objId to the list of objects that have children (of any type)
+	 * Add this objId to the list of objects that have children (of any type).
+	 *
+	 * See the no-arg overload for the constraint on not holding the DB 
+	 * lock when initializing is false.
+	 *
 	 * @param objId
 	 * @param initializing set to true if invoked from initialization
 	 */
 	private void setHasChildren(Long objId, boolean initializing) {
-		try {
-			if (!initializing) {
-				// Await initialization 
-				childrenBitSetInitLatch.await();
-			}
-		} catch (InterruptedException ex) {
-			throw new AssertionError("Interrupted Exception awaiting Children bit set initialization",ex); //NON-NLS
-		}
+		//try {
+			//if (!initializing) {
+				// If the current thread holds the write lock and initialization has
+				// not completed, populateHasChildrenMap cannot have run its DB query
+				// yet (it acquires the write lock first). Calling await() here would
+				// deadlock because populateHasChildrenMap is blocked waiting for the
+				// same write lock this thread holds. Return early — the parent will
+				// be captured by populateHasChildrenMap when the write lock releases.
+				
+				// @@@ UPDATE - REMOVED because everything is now sync
+				///if (rwLock.isWriteLockedByCurrentThread() && childrenBitSetInitLatch.getCount() > 0) {
+				//	return;
+				//}
+				//childrenBitSetInitLatch.await();
+			//}
+		//} catch (InterruptedException ex) {
+	//		throw new AssertionError("Interrupted Exception awaiting Children bit set initialization",ex); //NON-NLS
+		//}
 
 		childrenBitSetLock.lock();
 		try {
@@ -642,7 +663,7 @@ public class SleuthkitCase {
 	 *
 	 * @throws org.sleuthkit.datamodel.TskCoreException
 	 */
-	public synchronized CaseDbAccessManager getCaseDbAccessManager() throws TskCoreException {
+	public CaseDbAccessManager getCaseDbAccessManager() throws TskCoreException {
 		return dbAccessManager;
 	}
 
@@ -651,7 +672,7 @@ public class SleuthkitCase {
 	 *
 	 * @return The per case TaggingManager object.
 	 */
-	public synchronized TaggingManager getTaggingManager() {
+	public TaggingManager getTaggingManager() {
 		return taggingMgr;
 	}
 
@@ -974,58 +995,61 @@ public class SleuthkitCase {
 	 * @throws TskCoreException
 	 */
 	private void populateHasChildrenMap(boolean async) throws TskCoreException {
-		
-		Runnable childrenBitSetLockInitRunnable =  () -> {
-			
-			/**
-			 * This lock is insufficient to handle the case where this thread 
-			 * starts non-deterministically. {@link #childrenBitSetInitLatch} 
-			 * is countdown at the end of the initialization to provide the necessary guarantees. 
-			 */
-			childrenBitSetLock.lock();
-			// The distinct parent objeect id lookup is expensive in postgresql 
-			// This is offloaded into a thread and the incident open proceeds. 
-			// The access to the results are guarded by an object lock on hasChildrenBitSetMap. 
-			// The issue with this approach is that the SQLException will not cause a TSKCOreException. 
-			// Since this is running async, it also acquires a new connection from the pool
-			
+		if (async) {
+			throw new TskCoreException("populateHasChildrenMap: async loading is not supported");
+		}
+
+		Runnable childrenBitSetLockInitRunnable = () -> {
+
 			long timestamp = System.currentTimeMillis();
 
+			// Phase 1: hold the write lock only long enough to snapshot all
+			// parent IDs from the DB. childrenBitSetLock is NOT held here.
+			// Holding both locks simultaneously caused a deadlock: this thread
+			// would block on the write lock while an ingest thread held the
+			// write lock (via CaseDbTransaction) and blocked on
+			// childrenBitSetLock inside setHasChildren().
+			List<Long> parentIds = new ArrayList<>();
 			Statement statement = null;
 			ResultSet resultSet = null;
-			acquireSingleUserCaseWriteLock();			
+			acquireSingleUserCaseWriteLock();
 			try (CaseDbConnection neoConnection = connections.getConnection()) {
 				statement = neoConnection.createStatement();
-				String query = "select distinct par_obj_id from tsk_objects";
+				String query = "select distinct par_obj_id from tsk_objects"; //NON-NLS
 				if (dbType == DbType.POSTGRESQL) {
-					query = "select distinct ON (par_obj_id) par_obj_id from tsk_objects";
+					query = "select distinct ON (par_obj_id) par_obj_id from tsk_objects"; //NON-NLS
 				}
-
-				resultSet = statement.executeQuery(query); //NON-NLS
-
-				/**
-				 * Operating under the re-entrant lock {@link #childrenBitSetLock}
-				 */
+				resultSet = statement.executeQuery(query);
 				while (resultSet.next()) {
-					setHasChildren(resultSet.getLong("par_obj_id"), true);
+					parentIds.add(resultSet.getLong("par_obj_id")); //NON-NLS
 				}
-
-				long delay = System.currentTimeMillis() - timestamp;
-				logger.log(Level.INFO, "Time to initialize parent node cache: {0} ms", delay); //NON-NLS
 			} catch (SQLException ex) {
 				logger.log(Level.SEVERE, "Error populating parent node cache", ex); //NON-NLS
-				// Dont really expect this to be thrown, but if this happens, then it is non-recoverable. 
-				throw new AssertionError("Error populating parent node cache",ex); //NON-NLS
+				throw new AssertionError("Error populating parent node cache", ex); //NON-NLS
 			} catch (TskCoreException ex) {
 				logger.log(Level.SEVERE, "Error acquiring connection", ex); //NON-NLS
-				throw new AssertionError("Error acquiring connection",ex); //NON-NLS
+				throw new AssertionError("Error acquiring connection", ex); //NON-NLS
 			} finally {
 				closeResultSet(resultSet);
 				closeStatement(statement);
 				releaseSingleUserCaseWriteLock();
+			}
+
+			// Phase 2: update the in-memory map under its own lock. The write
+			// lock is no longer held so ingest threads can proceed. Any object
+			// inserted between phase 1 and phase 2 will have setHasChildren()
+			// called by addObject(), so the map stays consistent (bits are
+			// only ever set, never cleared).
+			childrenBitSetLock.lock();
+			try {
+				for (Long parentId : parentIds) {
+					setHasChildren(parentId, true);
+				}
+				long delay = System.currentTimeMillis() - timestamp;
+				logger.log(Level.INFO, "Time to initialize parent node cache: {0} ms", delay); //NON-NLS
+			} finally {
 				childrenBitSetLock.unlock();
-				// Countdown the latch as initialization has completed. 
-				childrenBitSetInitLatch.countDown(); 
+				//childrenBitSetInitLatch.countDown();
 			}
 		};
 
@@ -1043,12 +1067,13 @@ public class SleuthkitCase {
 	 * @throws TskCoreException
 	 */
 	void addDataSourceToHasChildrenMap() throws TskCoreException {
-		try {
+		//try {
 			// Await initialization. ensure no async version of the init is still running.
-			childrenBitSetInitLatch.await();
-		} catch (InterruptedException ex) {
-			throw new AssertionError("Interrupted Exception awaiting Children bit set initialization", ex); //NON-NLS
-		}
+			// @@@ UPDATE - REMOVED because everything is now sync
+			//childrenBitSetInitLatch.await();
+		//} catch (InterruptedException ex) {
+		//	throw new AssertionError("Interrupted Exception awaiting Children bit set initialization", ex); //NON-NLS
+		//}
 		populateHasChildrenMap(false);		 
 	}
 
@@ -1212,31 +1237,19 @@ public class SleuthkitCase {
 		if (dbPath.isEmpty()) {
 			throw new IOException("Copying case database files is not supported for this type of case database"); //NON-NLS
 		}
-		InputStream in = null;
-		OutputStream out = null;
+
 		acquireSingleUserCaseWriteLock();
-		try {
-			InputStream inFile = new FileInputStream(dbPath);
-			in = new BufferedInputStream(inFile);
+		try(InputStream inFile = new FileInputStream(dbPath);
+			InputStream in = new BufferedInputStream(inFile);
 			OutputStream outFile = new FileOutputStream(newDBPath);
-			out = new BufferedOutputStream(outFile);
+			OutputStream out = new BufferedOutputStream(outFile);) {
+			
 			int bytesRead = in.read();
 			while (bytesRead != -1) {
 				out.write(bytesRead);
 				bytesRead = in.read();
 			}
 		} finally {
-			try {
-				if (in != null) {
-					in.close();
-				}
-				if (out != null) {
-					out.flush();
-					out.close();
-				}
-			} catch (IOException e) {
-				logger.log(Level.WARNING, "Could not close streams after db copy", e); //NON-NLS
-			}
 			releaseSingleUserCaseWriteLock();
 		}
 	}
@@ -1711,8 +1724,12 @@ public class SleuthkitCase {
 			while (resultSet.next()) {
 				long objID = resultSet.getLong("obj_id");
 				String name = resultSet.getString("name");
-				updstatement.executeUpdate("UPDATE tsk_files SET extension = '" + escapeSingleQuotes(extractExtension(name)) + "' "
-						+ "WHERE obj_id = " + objID);
+				if (name != null) {
+					updstatement.executeUpdate("UPDATE tsk_files SET extension = '" + escapeSingleQuotes(extractExtension(name)) + "' "
+							+ "WHERE obj_id = " + objID);
+				} else {
+					updstatement.executeUpdate("UPDATE tsk_files SET extension = NULL WHERE obj_id = " + objID);
+				}
 			}
 
 			statement.execute("CREATE INDEX file_extension ON tsk_files ( extension )");
@@ -3120,8 +3137,32 @@ public class SleuthkitCase {
 	 * @throws TskCoreException
 	 */
 	public CaseDbTransaction beginTransaction() throws TskCoreException {
-		return new CaseDbTransaction(this);
+		return new CaseDbTransaction(this, false);
 	}
+
+	/**
+	 * <p>Create a new transaction on the case database. The transaction object
+	 * that is returned can be passed to methods that take a CaseDbTransaction.
+	 * The caller is responsible for calling either commit() or rollback() on
+	 * the transaction object.</p>
+	 *
+	 * <p>Note that this beginning the transaction also acquires the single user
+	 * case read lock, which will be automatically released when the 
+	 * transaction is closed.</p>
+	 * 
+	 * <p><strong>WARNING:</strong> This API should only be used if the transaction is
+	 * guaranteed to only ever perform reads and no updates to the database.
+	 * Undefined behavior can occur if this API is used with database updates.</p>
+	 *
+	 * @return A CaseDbTransaction object.
+	 *
+	 * @throws TskCoreException
+	 */
+	@Beta
+	public CaseDbTransaction beginReadOnlyTransaction() throws TskCoreException {
+		return new CaseDbTransaction(this, true);
+	}
+	
 
 	/**
 	 * Gets the case database name.
@@ -3228,7 +3269,7 @@ public class SleuthkitCase {
 	 */
 	@Beta
 	public static SleuthkitCase openCase(String dbPath, ContentStreamProvider contentProvider, String lockingApplicationName) throws TskCoreException {
-		return openCase(dbPath, contentProvider, null, false);
+		return openCase(dbPath, contentProvider, lockingApplicationName, false);
 	}
 	
 	/**
@@ -3364,7 +3405,7 @@ public class SleuthkitCase {
 	 */
 	@Beta
 	public static SleuthkitCase newCase(String dbPath, ContentStreamProvider contentProvider, String lockingApplicationName) throws TskCoreException {
-		return newCase(dbPath, contentProvider, null, false);
+		return newCase(dbPath, contentProvider, lockingApplicationName, false);
 	}
 	
 	/**
@@ -6725,6 +6766,7 @@ public class SleuthkitCase {
 	 */
 	long addObject(long parentId, int objectType, CaseDbConnection connection) throws SQLException {
 		ResultSet resultSet = null;
+		long newObjId;
 		acquireSingleUserCaseWriteLock();
 		try {
 			// INSERT INTO tsk_objects (par_obj_id, type) VALUES (?, ?)
@@ -6738,12 +6780,8 @@ public class SleuthkitCase {
 			statement.setInt(2, objectType);
 			connection.executeUpdate(statement);
 			resultSet = statement.getGeneratedKeys();
-
 			if (resultSet.next()) {
-				if (parentId != 0) {
-					setHasChildren(parentId);
-				}
-				return resultSet.getLong(1); //last_insert_rowid()
+				newObjId = resultSet.getLong(1); //last_insert_rowid()
 			} else {
 				throw new SQLException("Error inserting object with parent " + parentId + " into tsk_objects");
 			}
@@ -6751,6 +6789,13 @@ public class SleuthkitCase {
 			closeResultSet(resultSet);
 			releaseSingleUserCaseWriteLock();
 		}
+		// setHasChildren is memory-only (childrenBitSetLock handles thread
+		// safety) and must be called after releasing the DB write lock to
+		// avoid deadlocking with populateHasChildrenMap initialization.
+		if (parentId != 0) {
+			setHasChildren(parentId);
+		}
+		return newObjId;
 	}
 
 	/**
@@ -10661,18 +10706,6 @@ public class SleuthkitCase {
 	}
 
 	/**
-	 * Creates file object from a SQL query result set of rows from the
-	 * tsk_files table. Assumes that the query was of the form "SELECT * FROM
-	 * tsk_files WHERE XYZ".
-	 *
-	 * @param rs ResultSet to get content from. Caller is responsible for
-	 *           closing it.
-	 *
-	 * @return list of file objects from tsk_files table containing the files
-	 *
-	 * @throws SQLException if the query fails
-	 */
-	/**
 	 * Creates AbstractFile objects for the result set of a tsk_files table
 	 * query of the form "SELECT * FROM tsk_files WHERE XYZ".
 	 *
@@ -11249,7 +11282,7 @@ public class SleuthkitCase {
 	/**
 	 * Call to free resources when done with instance.
 	 */
-	public synchronized void close() {
+	public void close() {
 		acquireSingleUserCaseWriteLock();
 
 		try {
@@ -13287,6 +13320,17 @@ public class SleuthkitCase {
 				resultSet.close();
 			} catch (SQLException ex) {
 				logger.log(Level.SEVERE, "Error closing ResultSet", ex); //NON-NLS
+			} catch (InternalError ex) {
+				// C3P0 0.12.0+ throws InternalError ("Marking a ResultSet inactive
+				// that we did not know was opened") when closing a ResultSet that was
+				// produced by a cached PreparedStatement, because those statements
+				// bypass C3P0's proxy tracking layer. The query itself completed
+				// successfully; this error is C3P0 confusion during cleanup. Log as
+				// WARNING rather than SEVERE — data integrity is not affected, but
+				// the connection may not be cleaned up perfectly before pool return.
+				logger.log(Level.WARNING, "Non-SQL error closing ResultSet (C3P0 proxy tracking mismatch)", ex); //NON-NLS
+			} catch (VirtualMachineError | ThreadDeath | LinkageError ex) {
+				throw ex;
 			}
 		}
 	}
@@ -14065,7 +14109,7 @@ public class SleuthkitCase {
 		 * supported.
 		 *
 		 * NOTE: We run into deadlock risks when we start to lock multiple
-		 * tables. If that need arrises, consider changing to opportunistic
+		 * tables. If that need arises, consider changing to opportunistic
 		 * locking and single-step transactions.
 		 */
 		private class AggregateScoreTablePostgreSQLWriteLock implements DbCommand {
@@ -14078,9 +14122,10 @@ public class SleuthkitCase {
 
 			@Override
 			public void execute() throws SQLException {
-				PreparedStatement preparedStatement = connection.prepareStatement("LOCK TABLE ONLY tsk_aggregate_score in SHARE ROW EXCLUSIVE MODE");
-				preparedStatement.execute();
-
+				try (PreparedStatement preparedStatement = 
+						connection.prepareStatement("LOCK TABLE ONLY tsk_aggregate_score in SHARE ROW EXCLUSIVE MODE")) {
+					preparedStatement.execute();
+				}
 			}
 		}
 
@@ -14238,6 +14283,13 @@ public class SleuthkitCase {
 
 		PreparedStatement getPreparedStatement(PREPARED_STATEMENT statementKey, int generateKeys) throws SQLException {
 			// Lazy statement preparation.
+			// TODO: Consider replacing this custom PreparedStatement cache with C3P0's
+			// built-in statement caching (maxStatements / maxStatementsPerConnection).
+			// The current approach bypasses C3P0's proxy layer, so ResultSets produced
+			// by cached statements are not tracked by C3P0. In C3P0 0.12.0+, calling
+			// close() on such a ResultSet throws InternalError from NewProxyResultSet
+			// because C3P0 cannot find the ResultSet in its internal tracking map.
+			// C3P0's own cache would keep statements inside its proxy, avoiding this.
 			PreparedStatement statement;
 			if (this.preparedStatements.containsKey(statementKey)) {
 				statement = this.preparedStatements.get(statementKey);
@@ -14540,6 +14592,7 @@ public class SleuthkitCase {
 	public static final class CaseDbTransaction {
 
 		private final CaseDbConnection connection;
+		private final boolean readOnlyTransaction;
 		private SleuthkitCase sleuthkitCase;
 
         /* This class can store information about what was 
@@ -14556,15 +14609,32 @@ public class SleuthkitCase {
 
 		private List<Long> deletedOsAccountObjectIds = new ArrayList<>();
 		private List<Long> deletedResultObjectIds = new ArrayList<>();
+		
 
     // Keep track of which threads have connections to debug deadlocks
     private static Set<Long> threadsWithOpenTransaction = new HashSet<>();
     private static final Object threadsWithOpenTransactionLock = new Object();
 
-		private CaseDbTransaction(SleuthkitCase sleuthkitCase) throws TskCoreException {
+		/**
+		 * Constructor for a case database transaction.
+		 *
+		 * @param sleuthkitCase       The TSK case.
+		 * @param readOnlyTransaction True if the transaction will not make any
+		 *                            writes to the database and therefore does
+		 *                            not need the write lock.
+		 *
+		 * @throws TskCoreException
+		 */
+		private CaseDbTransaction(SleuthkitCase sleuthkitCase, boolean readOnlyTransaction) throws TskCoreException {
 			this.sleuthkitCase = sleuthkitCase;
+			this.readOnlyTransaction = readOnlyTransaction;
 
-			sleuthkitCase.acquireSingleUserCaseWriteLock();
+			if (readOnlyTransaction) {
+				sleuthkitCase.acquireSingleUserCaseReadLock();
+			} else {
+				sleuthkitCase.acquireSingleUserCaseWriteLock();	
+			}
+			
 			this.connection = sleuthkitCase.getConnection();
 			try {
 				synchronized (threadsWithOpenTransactionLock) {
@@ -14572,7 +14642,11 @@ public class SleuthkitCase {
 					threadsWithOpenTransaction.add(Thread.currentThread().getId());
 				}
 			} catch (SQLException ex) {
-				sleuthkitCase.releaseSingleUserCaseWriteLock();
+				if (readOnlyTransaction) {
+					sleuthkitCase.releaseSingleUserCaseReadLock();
+				} else {
+					sleuthkitCase.releaseSingleUserCaseWriteLock();	
+				}
 				throw new TskCoreException("Failed to create transaction on case database", ex);
 			}
 
@@ -14753,7 +14827,11 @@ public class SleuthkitCase {
 		 */
 		void close() {
 			this.connection.close();
-			sleuthkitCase.releaseSingleUserCaseWriteLock();
+			if (readOnlyTransaction) {
+				sleuthkitCase.releaseSingleUserCaseReadLock();
+			} else {
+				sleuthkitCase.releaseSingleUserCaseWriteLock();	
+			}
 			synchronized (threadsWithOpenTransactionLock) {
 				threadsWithOpenTransaction.remove(Thread.currentThread().getId());
 			}

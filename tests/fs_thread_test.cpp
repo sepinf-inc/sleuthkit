@@ -81,7 +81,7 @@ proc_dir(TSK_FS_FILE* fs_file, const char* path, void* stuff)
                 if (tsk_verbose) {
                     fprintf(stderr,
                             "Warning: %" PRIuSIZE " of %" PRIuSIZE
-                            " bytes read from %s file %s\n", cnt, len,
+                            " bytes read from %s file %s\n", (size_t)cnt, len,
                             ((fs_file->name->
                               flags & TSK_FS_NAME_FLAG_UNALLOC)
                              || (fs_file->meta->
@@ -128,7 +128,7 @@ public:
         // We rewrite the log on every iteration to prevent truly huge
         // logs files.
         char logname[256];
-        sprintf(logname, "thread-%d.log", m_id);
+        snprintf(logname, sizeof(logname), "thread-%d.log", m_id);
         for (size_t i = 0; i < m_niters; ++i) {
             FILE* log = fopen(logname, "w");
             if (log == 0) {

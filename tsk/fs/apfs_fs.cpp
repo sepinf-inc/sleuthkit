@@ -44,6 +44,7 @@ void APFSJObjTree::set_snapshot(uint64_t snap_xid) {
 
   // This type isn't copyable or moveable, so we have to use in-place allocation
   // TODO(JTS): Refactor APFSObjects so that they can be move assigned
+  // Resolve paddr before destroying _jobj_root so a throw leaves it intact.
   const apfs_block_num paddr = checked_find_paddr(_obj_root, _root_tree_oid);
   _jobj_root.~APFSJObjBtreeNode();
 #ifdef HAVE_LIBOPENSSL

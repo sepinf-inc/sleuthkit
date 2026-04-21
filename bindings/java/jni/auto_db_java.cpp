@@ -294,6 +294,10 @@ TskAutoDbJava::addPoolInfoAndVS(const TSK_POOL_INFO *pool_info, int64_t parObjId
         poolObjIdj, TSK_VS_TYPE_APFS, pool_info->img_offset, (uint64_t)pool_info->block_size);
     objId = (int64_t)objIdj;
 
+    if (objId < 0) {
+        return TSK_ERR;
+    }
+
     saveObjectInfo(objId, poolObjId, TSK_DB_OBJECT_TYPE_VS);
     return TSK_OK;
 }
@@ -493,7 +497,7 @@ TSK_RETVAL_ENUM TskAutoDbJava::createJString(const char * input, jstring & newJS
      * UTF16 buffer (target is advanced in the call to the conversion routine
      * above).
      */
-    newJString = m_jniEnv->NewString(utf16_input, (target - utf16_input) - 1);
+    newJString = m_jniEnv->NewString(utf16_input, (jsize)((target - utf16_input) - 1));
 
     free(utf16_input);
     return TSK_OK;
@@ -673,13 +677,14 @@ TskAutoDbJava::addFile(TSK_FS_FILE* fs_file,
     //     See github issue #756 on why initsize and not size.
     //   - The data is not compressed
     if ((fs_attr != NULL)
+        && (fs_file->meta != NULL)
         && ((strlen(name) > 0) && (!TSK_FS_ISDOT(name)))
         && (!(fs_file->meta->flags & TSK_FS_META_FLAG_COMP))
         && (fs_attr->flags & TSK_FS_ATTR_NONRES)
         && (fs_attr->nrd.allocsize > fs_attr->nrd.initsize)) {
-        strncat(name, "-slack", 6);
+        strncat(name, "-slack", nlen - strlen(name) - 1);
         if (strlen(extension) > 0) {
-            strncat(extension, "-slack", 6);
+            strncat(extension, "-slack", sizeof(extension) - strlen(extension) - 1);
         }
         jstring slackNamej;
         if (createJString(name, slackNamej) != TSK_OK) {
@@ -1100,6 +1105,13 @@ TskAutoDbJava::addImageDetails(const char* deviceId)
 
     for (int i = 0; i < m_img_info->num_img; i++) {
         char * img2 = (char*)tsk_malloc(1024 * sizeof(char));
+        if (img2 == NULL) {
+            for (int j = 0; j < i; j++) {
+                free(img_ptrs[j]);
+            }
+            free(img_ptrs);
+            return 1;
+        }
         UTF8 *ptr8;
         UTF16 *ptr16;
 
@@ -1114,11 +1126,16 @@ TskAutoDbJava::addImageDetails(const char* deviceId)
             tsk_error_reset();
             tsk_error_set_errno(TSK_ERR_AUTO_UNICODE);
             tsk_error_set_errstr("Error converting image to UTF-8\n");
+            free(img2);
+            for (int j = 0; j < i; j++) {
+                free(img_ptrs[j]);
+            }
+            free(img_ptrs);
             return 1;
         }
         img_ptrs[i] = img2;
     }
-#else 
+#else
     img_ptrs = m_img_info->images;
 #endif
 
@@ -1199,7 +1216,7 @@ TskAutoDbJava::addUnallocatedPoolBlocksToDb(size_t & numPool) {
         if (m_poolOffsetToVsId.find(pool_info->img_offset) == m_poolOffsetToVsId.end()) {
             tsk_error_reset();
             tsk_error_set_errno(TSK_ERR_AUTO_DB);
-            tsk_error_set_errstr("Error addUnallocatedPoolBlocksToDb() - could not find volume system object ID for pool at offset %lld", pool_info->img_offset);
+            tsk_error_set_errstr("Error addUnallocatedPoolBlocksToDb() - could not find volume system object ID for pool at offset %" PRIdOFF, pool_info->img_offset);
             return TSK_ERR;
         }
         int64_t curPoolVs = m_poolOffsetToVsId[pool_info->img_offset];
@@ -1419,9 +1436,12 @@ uint8_t
     }
 
     if (m_imageWriterEnabled) {
-        tsk_img_writer_create(m_img_info, m_imageWriterPath);
+        if (tsk_img_writer_create(m_img_info, m_imageWriterPath)) {
+            registerError();
+            return 1;
+        }
     }
-    
+
     if (m_addFileSystems) {
         return addFilesInImgToDb();
     } else {
@@ -1499,7 +1519,10 @@ uint8_t
         return 1;
     }
     if (m_imageWriterEnabled) {
-        tsk_img_writer_create(m_img_info, m_imageWriterPath);
+        if (tsk_img_writer_create(m_img_info, m_imageWriterPath)) {
+            registerError();
+            return 1;
+        }
     }
 
     if (m_addFileSystems) {
@@ -1684,7 +1707,8 @@ TSK_WALK_RET_ENUM TskAutoDbJava::fsWalkUnallocBlocksCb(const TSK_FS_BLOCK *a_blo
     TskAutoDbJava & tskAutoDbJava = unallocBlockWlkTrack->tskAutoDbJava;
     if (tskAutoDbJava.addUnallocBlockFile(tskAutoDbJava.m_curUnallocDirId,
         unallocBlockWlkTrack->fsObjId, unallocBlockWlkTrack->size, unallocBlockWlkTrack->ranges, fileObjId, tskAutoDbJava.m_curImgId) == TSK_ERR) {
-            // @@@ Handle error -> Don't have access to registerError() though...
+            tskAutoDbJava.registerError();
+            return TSK_WALK_STOP;
     }
 
     // reset
@@ -1750,17 +1774,19 @@ TSK_RETVAL_ENUM TskAutoDbJava::addFsInfoUnalloc(const TSK_DB_FS_INFO & dbFsInfo)
         return TSK_OK;
     }
 
-    // handle creation of the last range
-    // make range inclusive from curBlockStart to prevBlock
-    const uint64_t byteStart = unallocBlockWlkTrack.curRangeStart * fsInfo->block_size + fsInfo->offset;
-    const uint64_t byteLen = (1 + unallocBlockWlkTrack.prevBlock - unallocBlockWlkTrack.curRangeStart) * fsInfo->block_size;
-    unallocBlockWlkTrack.ranges.push_back(TSK_DB_FILE_LAYOUT_RANGE(byteStart, byteLen, unallocBlockWlkTrack.nextSequenceNo++));
-    int64_t fileObjId = 0;
+    // handle creation of the last range (only if the walk visited at least one block)
+    if (!unallocBlockWlkTrack.isStart) {
+        // make range inclusive from curBlockStart to prevBlock
+        const uint64_t byteStart = unallocBlockWlkTrack.curRangeStart * fsInfo->block_size + fsInfo->offset;
+        const uint64_t byteLen = (1 + unallocBlockWlkTrack.prevBlock - unallocBlockWlkTrack.curRangeStart) * fsInfo->block_size;
+        unallocBlockWlkTrack.ranges.push_back(TSK_DB_FILE_LAYOUT_RANGE(byteStart, byteLen, unallocBlockWlkTrack.nextSequenceNo++));
+        int64_t fileObjId = 0;
 
-    if (addUnallocBlockFile(m_curUnallocDirId, dbFsInfo.objId, unallocBlockWlkTrack.size, unallocBlockWlkTrack.ranges, fileObjId, m_curImgId) == TSK_ERR) {
-        registerError();
-        tsk_fs_close(fsInfo);
-        return TSK_ERR;
+        if (addUnallocBlockFile(m_curUnallocDirId, dbFsInfo.objId, unallocBlockWlkTrack.size, unallocBlockWlkTrack.ranges, fileObjId, m_curImgId) == TSK_ERR) {
+            registerError();
+            tsk_fs_close(fsInfo);
+            return TSK_ERR;
+        }
     }
     
     //cleanup 
@@ -1943,11 +1969,7 @@ TSK_RETVAL_ENUM TskAutoDbJava::addUnallocImageSpaceToDb() {
         return TSK_ERR;
     }
     else {
-        TSK_DB_FILE_LAYOUT_RANGE tempRange(0, imgSize, 0);
         //add unalloc block file for the entire image
-        vector<TSK_DB_FILE_LAYOUT_RANGE> ranges;
-        ranges.push_back(tempRange);
-        int64_t fileObjId = 0;
         if (TSK_ERR == addUnallocBlockFileInChunks(0, imgSize, m_curImgId, m_curImgId)) {
             return TSK_ERR;
         }

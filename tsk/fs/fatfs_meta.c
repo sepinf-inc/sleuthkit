@@ -551,7 +551,6 @@ fatfs_make_data_runs(TSK_FS_FILE * a_fs_file)
         TSK_FS_ATTR_RUN *data_run = NULL;
         TSK_FS_ATTR_RUN *data_run_tmp = NULL;
         TSK_FS_ATTR_RUN *data_run_head = NULL;
-        TSK_OFF_T full_len_s = 0;
         uint8_t canRecover = 1; // set to 0 if recovery is not possible
 
         if (tsk_verbose)
@@ -674,7 +673,6 @@ fatfs_make_data_runs(TSK_FS_FILE * a_fs_file)
                 data_run->addr = sbase;
             }
             data_run->len += fatfs->csize;
-            full_len_s += fatfs->csize;
 
             size_remain -= (fatfs->csize << fatfs->ssize_sh);
             clust++;
@@ -733,7 +731,6 @@ fatfs_make_data_runs(TSK_FS_FILE * a_fs_file)
         TSK_LIST *list_seen = NULL;
         TSK_FS_ATTR_RUN *data_run = NULL;
         TSK_FS_ATTR_RUN *data_run_head = NULL;
-        TSK_OFF_T full_len_s = 0;
         TSK_DADDR_T sbase;
         /* Do normal cluster chain walking for a file or directory, including
          * FAT32 and exFAT root directories. */
@@ -797,7 +794,6 @@ fatfs_make_data_runs(TSK_FS_FILE * a_fs_file)
             }
 
             data_run->len += fatfs->csize;
-            full_len_s += fatfs->csize;
             size_remain -= (fatfs->csize * fs->block_size);
 
             if ((int64_t) size_remain > 0) {
@@ -1220,7 +1216,7 @@ fatfs_inode_walk(TSK_FS_INFO *a_fs, TSK_INUM_T a_start_inum,
             return 0;
         }
     }
-    size_t bitmap_len = (a_fs->block_count + 7) / 8;
+    size_t bitmap_len = (size_t)((a_fs->block_count + 7) / 8);
 
     // Taking 128 MiB as an arbitrary upper bound
     if ((bitmap_len == 0) || (bitmap_len > (128 * 1024 * 1024))) {

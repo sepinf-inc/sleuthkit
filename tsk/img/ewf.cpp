@@ -289,14 +289,13 @@ ewf_open(int a_num_img,
             return NULL;
         }
         for (i = 0; i < a_num_img; i++) {
+            size_t img_len = TSTRLEN(a_images[i]) + 1;
             if ((ewf_info->img_info.images[i] =
-                    (TSK_TCHAR *) tsk_malloc((TSTRLEN(a_images[i]) +
-                            1) * sizeof(TSK_TCHAR))) == NULL) {
+                    (TSK_TCHAR *) tsk_malloc(img_len * sizeof(TSK_TCHAR))) == NULL) {
                 tsk_img_free(ewf_info);
                 return NULL;
             }
-            TSTRNCPY(ewf_info->img_info.images[i], a_images[i],
-                TSTRLEN(a_images[i]) + 1);
+            TSTRNCPY(ewf_info->img_info.images[i], a_images[i], img_len);
         }
     }
 
@@ -592,8 +591,8 @@ static int is_blank(const char* str) {
 static char* read_libewf_header_value(libewf_handle_t *handle, char* result_buffer, const size_t buffer_size, const uint8_t *identifier,  const char* key) {
     result_buffer[0] = '\0';
     size_t identifier_length = strlen((char *)identifier);
-    strcpy(result_buffer, key);
-    size_t key_len = strlen(key);
+    snprintf(result_buffer, buffer_size, "%s", key);
+    size_t key_len = strlen(result_buffer);
 
     //buffer_size - key_len - 1 for the new line at the end
     int result = libewf_handle_get_utf8_header_value(handle, identifier, identifier_length, (uint8_t *)(result_buffer + key_len), buffer_size - key_len - 1, NULL);
@@ -675,7 +674,7 @@ std::string ewf_get_details(IMG_EWF_INFO *ewf_info) {
     
     char* result = (char*)tsk_malloc(buffer_size);
     if (result == NULL) {
-        return NULL; 
+        return ""; 
     }
     
     string collectionDetails = "";

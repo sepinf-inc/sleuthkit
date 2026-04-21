@@ -1147,7 +1147,19 @@ public final class OsAccountManager {
 	 *
 	 * @return The query.
 	 */
+	private static final java.util.Set<String> ALLOWED_OS_ACCOUNT_UPDATE_TABLES = java.util.Collections.unmodifiableSet(
+		new java.util.HashSet<>(java.util.Arrays.asList(
+			"tsk_os_account_attributes",
+			"tsk_os_account_instances",
+			"tsk_files",
+			"tsk_data_artifacts"
+		))
+	);
+
 	private String makeOsAccountUpdateQuery(String tableName, OsAccount sourceAccount, OsAccount destAccount) {
+		if (!ALLOWED_OS_ACCOUNT_UPDATE_TABLES.contains(tableName)) {
+			throw new IllegalArgumentException("Invalid table name for OS account update: " + tableName);
+		}
 		return "UPDATE " + tableName + " SET os_account_obj_id = " + destAccount.getId() + " WHERE os_account_obj_id = " + sourceAccount.getId();
 	}
 
@@ -1386,6 +1398,7 @@ public final class OsAccountManager {
 		}
 	}	
 	
+	private final Object osAccountLockObj = new Object();
 	/**
 	 * Adds a rows to the tsk_os_account_attributes table for the given set of
 	 * attribute.
@@ -1397,7 +1410,7 @@ public final class OsAccountManager {
 	 */
 	public void addExtendedOsAccountAttributes(OsAccount account, List<OsAccountAttribute> accountAttributes) throws TskCoreException {
 
-		synchronized (account) {  // synchronized to prevent multiple threads trying to add osAccount attributes concurrently to the same osAccount.
+		synchronized (osAccountLockObj) {  // synchronized to prevent multiple threads trying to add osAccount attributes concurrently to the same osAccount.
 			db.acquireSingleUserCaseWriteLock();
 
 			try (CaseDbConnection connection = db.getConnection()) {

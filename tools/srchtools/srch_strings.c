@@ -282,11 +282,13 @@ main(int argc, char **argv)
                 case 'H':
                 case 'h':
                         usage(stdout, 0);
+                        break;
 
                 case 'n':
                         string_min = integer_arg(optarg);
                         if (string_min < 1) {
                                 fprintf(stderr, "invalid number %s\n", optarg);
+                                exit(1);
                         }
                         break;
 
@@ -336,6 +338,7 @@ main(int argc, char **argv)
 
                 case '?':
                         usage(stderr, 1);
+                        break;
 
                 default:
                         if (string_min < 0)

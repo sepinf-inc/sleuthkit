@@ -74,13 +74,13 @@ tsk_fs_dir_realloc(TSK_FS_DIR * a_fs_dir, size_t a_cnt)
 
     a_fs_dir->names_alloc = a_cnt;
 
-    if ((a_fs_dir->names =
-        (TSK_FS_NAME *)tsk_realloc((void *)a_fs_dir->names,
-            sizeof(TSK_FS_NAME) * a_fs_dir->names_alloc)) == NULL) {
+    TSK_FS_NAME *tmp = (TSK_FS_NAME *)tsk_realloc((void *)a_fs_dir->names, sizeof(TSK_FS_NAME) * a_fs_dir->names_alloc);
+    if (tmp == NULL) {
         a_fs_dir->names_alloc = 0;
         a_fs_dir->names_used = 0;
         return 1;
     }
+    a_fs_dir->names = tmp;
 
     memset(&a_fs_dir->names[prev_cnt], 0,
         (a_cnt - prev_cnt) * sizeof(TSK_FS_NAME));
@@ -256,8 +256,8 @@ tsk_fs_dir_add(TSK_FS_DIR * a_fs_dir, const TSK_FS_NAME * a_fs_name)
 			// Protect against trying to process very large directories
 			if (a_fs_dir->names_used >= MAX_DIR_SIZE_TO_PROCESS) {
 				tsk_error_reset();
-				tsk_error_set_errno(TSK_ERR_FS_GENFS);
-				tsk_error_set_errstr("tsk_fs_dir_add: Directory too large to process (addr: %" PRIuSIZE")", a_fs_dir->addr);
+				tsk_error_set_errno(TSK_ERR_FS_LARGE_DIR_ERROR);
+				tsk_error_set_errstr("tsk_fs_dir_add: Directory too large to process (addr: %" PRIuINUM", fs offset: %" PRIdOFF ")", a_fs_dir->addr, a_fs_dir->fs_info->offset);
 				return 1;
 			}
 
@@ -636,7 +636,7 @@ prioritizeDirNames(TSK_FS_NAME * names, size_t count, int * indexToOrderedIndex)
     for (currentScore = HIGH; currentScore <= LAST; currentScore++) {
         for (i = 0; i < count; i++) {
             if (scores[i] == currentScore) {
-                indexToOrderedIndex[orderedIndex] = i;
+                indexToOrderedIndex[orderedIndex] = (int)i;
                 orderedIndex++;
             }
         }

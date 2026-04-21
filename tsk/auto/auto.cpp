@@ -883,7 +883,6 @@ TskAuto::enableImageWriter(const char * imagePath) {
 	ilen = strlen(imagePath);
 	if ((m_imageWriterPath =
 		(wchar_t *)tsk_malloc((ilen + 1) * sizeof(wchar_t))) == NULL) {
-		free(m_imageWriterPath);
 		return TSK_ERR;
 	}
 

@@ -118,7 +118,6 @@ static void
         tsk_error_set_errstr("vhdi_image_close: unable to close handle - %s", errmsg);
     }
 
-    libvhdi_file_free(&(vhdi_info->handle), NULL);
     if( libvhdi_file_free(&(vhdi_info->handle), &vhdi_error ) != 1 )
     {
         tsk_error_reset();
@@ -172,14 +171,13 @@ vhdi_open(int a_num_img,
             return NULL;
     }
     for (i = 0; i < a_num_img; i++) {
+        size_t img_len = TSTRLEN(a_images[i]) + 1;
         if ((vhdi_info->img_info.images[i] =
-            (TSK_TCHAR *) tsk_malloc((TSTRLEN(a_images[i]) +
-            1) * sizeof(TSK_TCHAR))) == NULL) {
+            (TSK_TCHAR *) tsk_malloc(img_len * sizeof(TSK_TCHAR))) == NULL) {
                 tsk_img_free(vhdi_info);
                 return NULL;
         }
-        TSTRNCPY(vhdi_info->img_info.images[i], a_images[i],
-            TSTRLEN(a_images[i]) + 1);
+        TSTRNCPY(vhdi_info->img_info.images[i], a_images[i], img_len);
     }
 
     if (libvhdi_file_initialize(&(vhdi_info->handle), &vhdi_error) != 1) {

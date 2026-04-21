@@ -39,11 +39,11 @@
  * 3.1.2b1 would be 0x03010201.  Snapshot from Jan 2, 2003 would be
  * 0xFF030102.
  * See TSK_VERSION_STR for string form. */
-#define TSK_VERSION_NUM 0x041400ff
+#define TSK_VERSION_NUM 0x041500ff
 
 /** Version of code in string form. See TSK_VERSION_NUM for
  * integer form. */
-#define TSK_VERSION_STR "4.14.0-iped-patch"
+#define TSK_VERSION_STR "4.15.0-iped-patch"
 
 
 /* include the TSK-specific header file that we created in autoconf
@@ -65,6 +65,7 @@ extern "C" {
 #endif
 
 #define TSK_ERROR_STRING_MAX_LENGTH 1024
+typedef void(*TSK_ERROR_LISTENER_CB) (unsigned int err_code, const char* errmsg);
 
     typedef struct {
         uint32_t t_errno;
@@ -96,6 +97,8 @@ extern "C" {
     extern void tsk_error_vset_errstr2(const char *format, va_list args);
     extern void tsk_error_errstr2_concat(const char *format,
         ...) TSK_ERROR_FORMAT_ATTRIBUTE(1, 2);
+
+    extern void tsk_error_set_error_listener(TSK_ERROR_LISTENER_CB listener);
 
     /** Return a human-readable form of tsk_error_get_errno **/
     extern const char *tsk_error_get();
@@ -337,7 +340,7 @@ extern "C" {
 #define TSK_ERR_VS_MAX		10
 
 #define TSK_ERR_POOL_UNKTYPE    (TSK_ERR_POOL | 0)
-#define TSK_ERR_POOL_UNSUPTYPE  (TSK_ERR_IMG | 1)
+#define TSK_ERR_POOL_UNSUPTYPE  (TSK_ERR_POOL | 1)
 #define TSK_ERR_POOL_ARG        (TSK_ERR_POOL | 2)
 #define TSK_ERR_POOL_GENPOOL    (TSK_ERR_POOL | 3)
 #define TSK_ERR_POOL_MAX        4
@@ -364,7 +367,8 @@ extern "C" {
 #define TSK_ERR_FS_POSSIBLY_ENCRYPTED    (TSK_ERR_FS | 19)
 #define TSK_ERR_FS_MULTTYPE    (TSK_ERR_FS | 20)
 #define TSK_ERR_FS_BITLOCKER_ERROR    (TSK_ERR_FS | 21)
-#define TSK_ERR_FS_MAX		22
+#define TSK_ERR_FS_LARGE_DIR_ERROR    (TSK_ERR_FS | 22)
+#define TSK_ERR_FS_MAX		23
 
 #define TSK_ERR_HDB_UNKTYPE     (TSK_ERR_HDB | 0)
 #define TSK_ERR_HDB_UNSUPTYPE   (TSK_ERR_HDB | 1)
@@ -378,7 +382,7 @@ extern "C" {
 #define TSK_ERR_HDB_PROC        (TSK_ERR_HDB | 9)
 #define TSK_ERR_HDB_OPEN        (TSK_ERR_HDB | 10)
 #define TSK_ERR_HDB_CORRUPT     (TSK_ERR_HDB | 11)
-#define TSK_ERR_HDB_UNSUPFUNC     (TSK_ERR_HDB | 11)
+#define TSK_ERR_HDB_UNSUPFUNC   (TSK_ERR_HDB | 12)
 #define TSK_ERR_HDB_MAX		13
 
 #define TSK_ERR_AUTO_DB (TSK_ERR_AUTO | 0)
@@ -483,10 +487,9 @@ documentation and/or software.
     } TSK_SHA_CTX;
 
 /* Message digest functions */
-
     void TSK_SHA_Init(TSK_SHA_CTX *);
     void TSK_SHA_Update(TSK_SHA_CTX *, BYTE * buffer, int count);
-    void TSK_SHA_Final(BYTE * output, TSK_SHA_CTX *);
+    void TSK_SHA_Final(BYTE output[20], TSK_SHA_CTX *);
 
 /* Flags for which type of hash(es) to run */
 	typedef enum{
