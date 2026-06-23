@@ -1677,14 +1677,17 @@ void APFSFSCompat::date_added_cache::populate(uint64_t pid) noexcept {
   _cache.clear();
   _last_parent = pid;
 
-  tsk_fs_dir_walk(
-      _fs, pid, TSK_FS_DIR_WALK_FLAG_NONE,
-      [](TSK_FS_FILE* file, const char*, void* a) -> TSK_WALK_RET_ENUM {
-        auto& cache = *static_cast<std::unordered_map<uint64_t, uint64_t>*>(a);
-        cache[file->name->meta_addr] = file->name->date_added;
-        return TSK_WALK_CONT;
-      },
-      &_cache);
+  // iped-patch: Optimization: Bypass the heavy tsk_fs_dir_walk and read children directly from the object
+  TSK_FS_FILE* dir_file = tsk_fs_file_open_meta(_fs, nullptr, pid);
+  if (dir_file != nullptr) {
+    if (dir_file->meta != nullptr && dir_file->meta->content_ptr != nullptr) {
+      const auto jobj = static_cast<APFSJObject*>(dir_file->meta->content_ptr);
+      for (const auto& child : jobj->children()) {
+        _cache[child.rec.file_id] = child.rec.date_added;
+      }
+    }
+    tsk_fs_file_close(dir_file);
+  }
 }
 
 uint64_t APFSFSCompat::date_added_cache::lookup(uint64_t parent_id,
@@ -1693,14 +1696,18 @@ uint64_t APFSFSCompat::date_added_cache::lookup(uint64_t parent_id,
     return 0;
   }
 
+  // iped-patch: Lock the cache to protect against concurrent IPED workers
+  std::lock_guard<std::mutex> lock(_mutex);
+
   if (_last_parent != parent_id) {
     populate(parent_id);
   }
 
-  try {
-    return _cache[inode_num];
-  } catch (...) {
-    // Something went wrong
-    return 0;
+  // iped-patch: Use find() to prevent the map from silently growing on cache misses
+  auto it = _cache.find(inode_num);
+  if (it != _cache.end()) {
+    return it->second;
   }
+
+  return 0;
 }

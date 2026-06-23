@@ -13,12 +13,14 @@
 #include "tsk_fs.h"
 
 #include <unordered_map>
+#include <mutex>
 
 class APFSFSCompat : public APFSJObjTree {
   class date_added_cache {
     std::unordered_map<uint64_t, uint64_t> _cache{};
     uint64_t _last_parent{};
     TSK_FS_INFO* _fs;
+    std::mutex _mutex;
 
     void populate(uint64_t pid) noexcept;
 
