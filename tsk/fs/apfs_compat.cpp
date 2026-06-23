@@ -646,14 +646,21 @@ uint8_t APFSFSCompat::file_add_meta(TSK_FS_FILE* fs_file, TSK_INUM_T addr) const
 
   fs_file->meta->attr_state = TSK_FS_META_ATTR_EMPTY;
 
+  auto inode_ptr = static_cast<APFSJObject*>(fs_file->meta->content_ptr);
+
+  // iped-patch
+  // 1. Construct the object FIRST. If obj(addr) throws an exception here, 
+  // the callback remains null, and TSK will safely free the raw memory 
+  // without calling the destructor.
+  new (inode_ptr) APFSJObject(obj(addr));
+
+  // iped-patch
+  // 2. THEN assign the destructor callback so TSK knows how to clean it up.
   fs_file->meta->reset_content = [](void* content_ptr) {
     // Destruct the APFSJObject
     static_cast<APFSJObject*>(content_ptr)->~APFSJObject();
   };
 
-  auto inode_ptr = static_cast<APFSJObject*>(fs_file->meta->content_ptr);
-
-  new (inode_ptr) APFSJObject(obj(addr));
   if (!inode_ptr->valid()) {
     tsk_error_reset();
     tsk_error_set_errno(TSK_ERR_FS_INODE_NUM);
