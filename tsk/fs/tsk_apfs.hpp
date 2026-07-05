@@ -357,8 +357,8 @@ class APFSBtreeNodeIterator {
     }
 
     // Handle child iterator null safely
-    if (!_child_it || !rhs._child_it) {
-        return (_child_it == rhs._child_it);
+    if (_child_it == nullptr || rhs._child_it == nullptr) {
+      return _child_it == rhs._child_it;   // equal only if both are null
     }
 
     return (*_child_it == *rhs._child_it);
