@@ -278,8 +278,8 @@ tsk_img_open(int num_img,
         return NULL;
     }
 
-    /* we have a good img_info, set up the cache lock */
-    tsk_init_lock(&(img_info->cache_lock));
+    /* we have a good img_info, set up the cache locks */
+    tsk_img_lock_init(img_info);
     return img_info;
 }
 
@@ -381,7 +381,7 @@ tsk_img_open_utf8(int num_img,
         free(images16);
 
         if (retval) {
-            tsk_init_lock(&(retval->cache_lock));
+            tsk_img_lock_init(retval);
         }
         return retval;
     }
@@ -474,7 +474,7 @@ tsk_img_open_external(
     img_info->close = close;
     img_info->imgstat = imgstat;
 
-    tsk_init_lock(&(img_info->cache_lock));
+    tsk_img_lock_init(img_info);
     return img_info;
 }
 
@@ -574,6 +574,6 @@ tsk_img_close(TSK_IMG_INFO * a_img_info)
     if (a_img_info == NULL) {
         return;
     }
-    tsk_deinit_lock(&(a_img_info->cache_lock));
+    tsk_img_lock_deinit(a_img_info);
     a_img_info->close(a_img_info);
 }
