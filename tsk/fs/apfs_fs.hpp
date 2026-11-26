@@ -97,6 +97,10 @@ class APFSJObject {
   inline uint64_t size_on_disk() const noexcept { return _size_on_disk; }
 
   inline bool is_clone() const noexcept { return _is_clone; }
+
+  inline void add_extent(uint64_t offset, uint64_t phys, uint64_t len) {
+    _extents.emplace_back(extent{offset, phys, len, 0});
+  }
 };
 
 class APFSJObjTree {
@@ -114,6 +118,11 @@ class APFSJObjTree {
   APFSObjectBtreeNode _obj_root;
   APFSJObjBtreeNode _jobj_root;
   uint64_t _root_tree_oid;
+  // Root of the file extent tree of a sealed volume, 0 if there is none
+  apfs_block_num _fext_root{};
+
+  // Adds the extents of a data stream from the file extent tree
+  void add_fext_extents(uint64_t oid, APFSJObject &jobj) const;
 
   inline auto jobjs(uint64_t oid) const {
     return _jobj_root.find_range(
@@ -129,11 +138,12 @@ class APFSJObjTree {
  public:
   APFSJObjTree(const APFSPool &pool, apfs_block_num obj_omap,
                uint64_t root_tree_oid,
-               const APFSFileSystem::crypto_info_t &crypto);
+               const APFSFileSystem::crypto_info_t &crypto,
+               apfs_block_num fext_root = 0);
 
   APFSJObjTree(APFSJObjTree &&) = default;
 
-  inline APFSJObject obj(uint64_t oid) const { return {jobjs(oid)}; }
+  APFSJObject obj(uint64_t oid) const;
 
   void set_snapshot(uint64_t snap_xid);
 
