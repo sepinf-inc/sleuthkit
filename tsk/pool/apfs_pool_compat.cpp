@@ -283,7 +283,7 @@ apfs_img_close(TSK_IMG_INFO * img_info)
     }
 
     // Close the pool image
-    tsk_deinit_lock(&(img_info->cache_lock));
+    tsk_img_lock_deinit(img_info);
     tsk_img_free(img_info);
 }
 
@@ -341,7 +341,7 @@ TSK_IMG_INFO * APFSPoolCompat::getImageInfo(const TSK_POOL_INFO *pool_info, TSK_
     img_info->spare_size = origInfo->spare_size;
     img_info->images = origInfo->images;
 
-    tsk_init_lock(&(img_info->cache_lock));
+    tsk_img_lock_init(img_info);
 
     return img_info;
 

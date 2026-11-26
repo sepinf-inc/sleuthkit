@@ -10,6 +10,12 @@
 
 #include "detect_encryption.h"
 
+#include <stdlib.h>
+#include <string.h>
+#ifndef TSK_WIN32
+#include <unistd.h>
+#endif
+
 // Scans the buffer and returns 1 if the given signature is found, 0 otherwise.
 // Looks for the signature starting at each byte from startingOffset to endingOffset.
 int
@@ -102,6 +108,49 @@ detectSymantecPGP(const char * buf, size_t len) {
     return detectSignature(signature, strlen(signature), 0, 32, buf, len);
 }
 
+#define ENTROPY_BLOCK_LEN 65536
+#define ENTROPY_MAX_BLOCKS 100
+
+#ifndef TSK_WIN32
+#include <pthread.h>
+
+// State shared by the entropy worker threads. Blocks are assigned by
+// stride (worker t handles blocks where block % numThreads == t); each
+// worker fills an independent per-block histogram, and the main thread
+// merges them in block order so the result is identical to the
+// sequential pass, including the stop at the first failed read.
+typedef struct {
+    TSK_IMG_INFO *img_info;
+    TSK_DADDR_T offset;
+    uint64_t firstBlock;
+    uint64_t endBlock;      // exclusive
+    unsigned stride;
+    unsigned lane;
+    int (*blockCounts)[256];
+    unsigned char *blockOk;
+} entropy_worker_args;
+
+static void *
+entropyWorker(void *ptr) {
+    entropy_worker_args *args = (entropy_worker_args *)ptr;
+    char buf[ENTROPY_BLOCK_LEN];
+
+    for (uint64_t i = args->firstBlock + args->lane; i < args->endBlock;
+            i += args->stride) {
+        if (tsk_img_read(args->img_info, args->offset + i * ENTROPY_BLOCK_LEN,
+                buf, ENTROPY_BLOCK_LEN) != (ssize_t)ENTROPY_BLOCK_LEN) {
+            continue;   // leave blockOk[i] unset; merge stops there
+        }
+        for (size_t j = 0; j < ENTROPY_BLOCK_LEN; j++) {
+            unsigned char b = buf[j] & 0xff;
+            args->blockCounts[i][b]++;
+        }
+        args->blockOk[i] = 1;
+    }
+    return NULL;
+}
+#endif
+
 // Returns the entropy of the beginning of the image.
 double
 calculateEntropy(TSK_IMG_INFO * img_info, TSK_DADDR_T offset) {
@@ -113,40 +162,116 @@ calculateEntropy(TSK_IMG_INFO * img_info, TSK_DADDR_T offset) {
     }
 
     // Read in blocks of 65536 bytes, skipping the first one that is more likely to contain header data.
-    size_t bufLen = 65536;
-    char* buf = (char*)tsk_malloc(bufLen);
-    if (buf == NULL) {
-        return 0.0;
-    }
+    size_t bufLen = ENTROPY_BLOCK_LEN;
     size_t bytesRead = 0;
-    for (uint64_t i = 1; i < 100; i++) {
-        if ((i + 1) * bufLen > (uint64_t)img_info->size - offset) {
-            break;
-        }
 
-        if (tsk_img_read(img_info, offset + i * bufLen, buf, bufLen) != (ssize_t) bufLen) {
-            break;
-        }
-
-        for (size_t j = 0; j < bufLen; j++) {
-            unsigned char b = buf[j] & 0xff;
-            byteCounts[b]++;
-        }
-        bytesRead += bufLen;
+    // Number of full blocks available after the skipped header block
+    uint64_t endBlock = 1;
+    while (endBlock < ENTROPY_MAX_BLOCKS
+        && (endBlock + 1) * bufLen <= (uint64_t)img_info->size - offset) {
+        endBlock++;
     }
 
-    free(buf);
+#ifndef TSK_WIN32
+    // Read and count the blocks with a small pool of threads (the image
+    // cache supports concurrent readers). Per-block histograms merged in
+    // block order keep the result bit-identical to the sequential pass.
+    // Disable with TSK_ENTROPY_THREADS=0.
+    {
+        const char *env = getenv("TSK_ENTROPY_THREADS");
+        long nproc = sysconf(_SC_NPROCESSORS_ONLN);
+        unsigned numThreads = (nproc > 4) ? 4 : (nproc > 1 ? (unsigned)nproc : 1);
 
+        if ((env == NULL || strcmp(env, "0") != 0)
+            && numThreads > 1 && endBlock - 1 >= 2 * numThreads) {
+
+            int (*blockCounts)[256] = (int (*)[256])tsk_malloc(
+                ENTROPY_MAX_BLOCKS * sizeof(*blockCounts));
+            unsigned char *blockOk = (unsigned char *)tsk_malloc(ENTROPY_MAX_BLOCKS);
+            pthread_t threads[4];
+            entropy_worker_args args[4];
+            unsigned started = 0;
+
+            if (blockCounts != NULL && blockOk != NULL) {
+                for (unsigned t = 0; t < numThreads; t++) {
+                    args[t].img_info = img_info;
+                    args[t].offset = offset;
+                    args[t].firstBlock = 1;
+                    args[t].endBlock = endBlock;
+                    args[t].stride = numThreads;
+                    args[t].lane = t;
+                    args[t].blockCounts = blockCounts;
+                    args[t].blockOk = blockOk;
+                    if (pthread_create(&threads[t], NULL, entropyWorker,
+                            &args[t]) != 0) {
+                        break;
+                    }
+                    started++;
+                }
+                for (unsigned t = 0; t < started; t++) {
+                    pthread_join(threads[t], NULL);
+                }
+
+                if (started == numThreads) {
+                    // Merge in block order, stopping at the first failed
+                    // read exactly like the sequential loop.
+                    for (uint64_t i = 1; i < endBlock; i++) {
+                        if (!blockOk[i]) {
+                            break;
+                        }
+                        for (int b = 0; b < 256; b++) {
+                            byteCounts[b] += blockCounts[i][b];
+                        }
+                        bytesRead += bufLen;
+                    }
+                    free(blockCounts);
+                    free(blockOk);
+                    goto compute;
+                }
+                // thread creation failed: fall through to sequential
+                memset(byteCounts, 0, sizeof(byteCounts));
+                bytesRead = 0;
+            }
+            free(blockCounts);
+            free(blockOk);
+        }
+    }
+#endif
+
+    {
+        char* buf = (char*)tsk_malloc(bufLen);
+        if (buf == NULL) {
+            return 0.0;
+        }
+        for (uint64_t i = 1; i < endBlock; i++) {
+            if (tsk_img_read(img_info, offset + i * bufLen, buf, bufLen) != (ssize_t) bufLen) {
+                break;
+            }
+
+            for (size_t j = 0; j < bufLen; j++) {
+                unsigned char b = buf[j] & 0xff;
+                byteCounts[b]++;
+            }
+            bytesRead += bufLen;
+        }
+        free(buf);
+    }
+
+#ifndef TSK_WIN32
+  compute:
+#endif
     // Calculate entropy
-    double entropy = 0.0;
-    double log2 = log(2);
-    for (int i = 0; i < 256; i++) {
-        if (byteCounts[i] > 0) {
-            double p = (double)(byteCounts[i]) / bytesRead;
-            entropy -= p * log(p) / log2;
+    {
+        double entropy = 0.0;
+        double log2 = log(2);
+        for (int i = 0; i < 256; i++) {
+            if (byteCounts[i] > 0) {
+                double p = (double)(byteCounts[i]) / bytesRead;
+                entropy -= p * log(p) / log2;
+            }
         }
+        return entropy;
     }
-    return entropy;
 }
 
 /**

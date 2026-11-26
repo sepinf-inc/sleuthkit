@@ -84,6 +84,16 @@ extern "C" {
 #define TSK_IMG_INFO_CACHE_NUM  32
 #define TSK_IMG_INFO_CACHE_LEN  65536
 
+/* The read cache is split into independent banks, each with its own
+ * lock, so that concurrent readers only contend when they access the
+ * same region of the image. Cache blocks are aligned to
+ * TSK_IMG_INFO_CACHE_LEN and the image address space is mapped onto
+ * banks in runs of TSK_IMG_INFO_CACHE_BANK_ENTRIES consecutive blocks,
+ * so every block belongs to exactly one bank. */
+#define TSK_IMG_INFO_CACHE_BANKS 8
+#define TSK_IMG_INFO_CACHE_BANK_ENTRIES \
+    (TSK_IMG_INFO_CACHE_NUM / TSK_IMG_INFO_CACHE_BANKS)
+
     typedef struct TSK_IMG_INFO TSK_IMG_INFO;
 #define TSK_IMG_INFO_TAG 0x39204231
 
@@ -102,16 +112,34 @@ extern "C" {
         // the following are protected by cache_lock in IMG_INFO
         TSK_TCHAR **images;    ///< Image names
 
-        tsk_lock_t cache_lock;  ///< Lock for cache and associated values
-        char cache[TSK_IMG_INFO_CACHE_NUM][TSK_IMG_INFO_CACHE_LEN];     ///< read cache (r/w shared - lock) 
-        TSK_OFF_T cache_off[TSK_IMG_INFO_CACHE_NUM];    ///< starting byte offset of corresponding cache entry (r/w shared - lock) 
-        int cache_age[TSK_IMG_INFO_CACHE_NUM];  ///< "Age" of corresponding cache entry, higher means more recently used (r/w shared - lock) 
-        size_t cache_len[TSK_IMG_INFO_CACHE_NUM];       ///< Length of cache entry used (0 if never used) (r/w shared - lock) 
+        /* cache_lock serializes calls into the image-format backends
+         * (which keep shared state such as seek positions and handle
+         * caches) and any non-cache shared variables in the
+         * format-specific INFO structs. The cache arrays themselves are
+         * protected by the per-bank locks: entry i belongs to bank
+         * i / TSK_IMG_INFO_CACHE_BANK_ENTRIES. Lock order is always
+         * bank lock -> cache_lock; never the reverse. */
+        tsk_lock_t cache_lock;  ///< Lock for backend I/O and format-specific shared state
+        tsk_lock_t cache_bank_locks[TSK_IMG_INFO_CACHE_BANKS];  ///< One lock per cache bank
+        char cache[TSK_IMG_INFO_CACHE_NUM][TSK_IMG_INFO_CACHE_LEN];     ///< read cache (r/w shared - bank lock)
+        TSK_OFF_T cache_off[TSK_IMG_INFO_CACHE_NUM];    ///< starting byte offset of corresponding cache entry (r/w shared - bank lock)
+        int cache_age[TSK_IMG_INFO_CACHE_NUM];  ///< "Age" of corresponding cache entry, higher means more recently used (r/w shared - bank lock)
+        size_t cache_len[TSK_IMG_INFO_CACHE_NUM];       ///< Length of cache entry used (0 if never used) (r/w shared - bank lock)
+
+        TSK_OFF_T last_read_offset[TSK_IMG_INFO_CACHE_BANKS];   ///< Last offset read per bank (sequential access detection; bank lock)
+        size_t last_read_len[TSK_IMG_INFO_CACHE_BANKS];         ///< Length of last read per bank (bank lock)
+        int sequential_streak[TSK_IMG_INFO_CACHE_BANKS];        ///< Consecutive sequential reads per bank (bank lock)
 
         ssize_t(*read) (TSK_IMG_INFO * img, TSK_OFF_T off, char *buf, size_t len);     ///< \internal External progs should call tsk_img_read()
         void (*close) (TSK_IMG_INFO *); ///< \internal Progs should call tsk_img_close()
         void (*imgstat) (TSK_IMG_INFO *, FILE *);       ///< Pointer to file type specific function
     };
+
+    /* Initialize / destroy the cache_lock and the per-bank cache locks
+     * of a TSK_IMG_INFO. Must be used by every code path that creates
+     * or tears down a TSK_IMG_INFO (including pool wrappers). */
+    extern void tsk_img_lock_init(TSK_IMG_INFO *);
+    extern void tsk_img_lock_deinit(TSK_IMG_INFO *);
 
     // open and close functions
     extern TSK_IMG_INFO *tsk_img_open_sing(const TSK_TCHAR * a_image,
