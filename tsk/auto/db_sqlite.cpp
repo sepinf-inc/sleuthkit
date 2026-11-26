@@ -818,7 +818,7 @@ TskDbSqlite::addUnallocatedPoolVolume(int vol_index, int64_t parObjId, int64_t& 
     zSQL = sqlite3_mprintf(
         "INSERT INTO tsk_vs_parts (obj_id, addr, start, length, desc, flags)"
         "VALUES (%lld, %" PRIuPNUM ",%" PRIuDADDR ",%" PRIuDADDR ",'%q',%d)",
-        objId, vol_index, 0, 0,
+        objId, (TSK_PNUM_T)vol_index, (TSK_DADDR_T)0, (TSK_DADDR_T)0,
         "Unallocated Blocks", 0);
 
     ret = attempt_exec(zSQL,
