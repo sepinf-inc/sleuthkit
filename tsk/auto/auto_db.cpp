@@ -394,7 +394,8 @@ TskAutoDb::addUnallocatedPoolBlocksToDb(size_t & numPool) {
         TSK_FS_ATTR_RUN * current_run = unalloc_runs;
         while (current_run != NULL) {
 
-            if (addUnallocBlockFileInChunks(current_run->addr * pool_info->block_size, current_run->len * pool_info->block_size, unallocVolObjId, m_curImgId) == TSK_ERR) {
+            // The runs are block addresses relative to the start of the pool, but layout ranges are image offsets
+            if (addUnallocBlockFileInChunks(pool_info->img_offset + current_run->addr * pool_info->block_size, current_run->len * pool_info->block_size, unallocVolObjId, m_curImgId) == TSK_ERR) {
                 registerError();
                 tsk_fs_attr_run_free(unalloc_runs);
                 return TSK_ERR;

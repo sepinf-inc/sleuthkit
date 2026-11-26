@@ -318,7 +318,7 @@ TskAutoDbJava::addPoolVolumeInfo(const TSK_POOL_VOLUME_INFO* pool_vol,
 
     jlong objIdj = m_jniEnv->CallLongMethod(m_javaDbObj, m_addVolumeMethodID,
         parObjId, (int64_t)pool_vol->index, pool_vol->block, pool_vol->num_blocks,
-        descj, pool_vol->flags);
+        descj, (jlong)pool_vol->flags);
     objId = (int64_t)objIdj;
 
     if (objId < 0) {
@@ -345,7 +345,7 @@ TskAutoDbJava::addVolumeInfo(const TSK_VS_PART_INFO* vs_part,
 
     jlong objIdj = m_jniEnv->CallLongMethod(m_javaDbObj, m_addVolumeMethodID,
         parObjId, (uint64_t)vs_part->addr, vs_part->start, vs_part->len,
-        descj, vs_part->flags);
+        descj, (jlong)vs_part->flags);
     objId = (int64_t)objIdj;
 
     if (objId < 0) {
@@ -928,8 +928,8 @@ TskAutoDbJava::addUnallocatedPoolVolume(int vol_index, int64_t parObjId, int64_t
     jstring descj = m_jniEnv->NewStringUTF(desc);
 
     jlong objIdj = m_jniEnv->CallLongMethod(m_javaDbObj, m_addVolumeMethodID,
-        parObjId, vol_index, 0, 0,
-        descj, 0);
+        (jlong)parObjId, (jlong)vol_index, (jlong)0, (jlong)0,
+        descj, (jlong)0);
     objId = (int64_t)objIdj;
 
     if (objId < 0) {
@@ -1251,7 +1251,8 @@ TskAutoDbJava::addUnallocatedPoolBlocksToDb(size_t & numPool) {
         TSK_FS_ATTR_RUN * current_run = unalloc_runs;
         while (current_run != NULL) {
 
-            if (addUnallocBlockFileInChunks(current_run->addr * pool_info->block_size, current_run->len * pool_info->block_size, unallocVolObjId, m_curImgId) == TSK_ERR) {
+            // The runs are block addresses relative to the start of the pool, but layout ranges are image offsets
+            if (addUnallocBlockFileInChunks(pool_info->img_offset + current_run->addr * pool_info->block_size, current_run->len * pool_info->block_size, unallocVolObjId, m_curImgId) == TSK_ERR) {
                 registerError();
                 tsk_fs_attr_run_free(unalloc_runs);
                 return TSK_ERR;
