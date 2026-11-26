@@ -648,7 +648,7 @@ const std::vector<APFSFileSystem::snapshot_t> APFSFileSystem::snapshots()
 }
 
 APFSJObjTree APFSFileSystem::root_jobj_tree() const {
-  return {_pool, omap_root(), rdo(), crypto_info()};
+  return {_pool, omap_root(), rdo(), crypto_info(), fext_tree_block()};
 }
 
 apfs_block_num APFSFileSystem::omap_root() const {
@@ -663,7 +663,7 @@ APFSJObjBtreeNode::APFSJObjBtreeNode(const APFSObjectBtreeNode* obj_root,
 #else
     : APFSBtreeNode(obj_root->pool(), block_num, nullptr), _obj_root{ obj_root } {
 #endif
-  if (subtype() != APFS_OBJ_TYPE_FSTREE) {
+  if (has_header() && subtype() != APFS_OBJ_TYPE_FSTREE) {
     throw std::runtime_error("APFSJObjBtreeNode: invalid subtype");
   }
 }

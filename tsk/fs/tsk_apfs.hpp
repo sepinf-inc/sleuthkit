@@ -466,7 +466,7 @@ class APFSBtreeNode : public APFSObject, public APFSOmap::node_tag {
       decrypt(key);
     }
 
-    if (obj_type() != APFS_OBJ_TYPE_BTREE_NODE &&
+    if (has_header() && obj_type() != APFS_OBJ_TYPE_BTREE_NODE &&
         obj_type() != APFS_OBJ_TYPE_BTREE_ROOTNODE) {
       throw std::runtime_error("APFSBtreeNode: invalid object type");
     }
@@ -487,6 +487,13 @@ class APFSBtreeNode : public APFSObject, public APFSOmap::node_tag {
 
   inline bool is_root() const noexcept {
     return bit_is_set(bn()->flags, APFS_BTNODE_ROOT);
+  }
+
+  // The nodes of the trees of a sealed volume are stored without an object
+  // header: it is all zeros, so their type and subtype can not be checked.
+  inline bool has_header() const noexcept {
+    return !(bit_is_set(bn()->flags, APFS_BTNODE_NOHEADER) &&
+             obj()->oid == 0 && obj()->type_and_flags == 0);
   }
 
   inline bool is_leaf() const noexcept {
@@ -1065,6 +1072,17 @@ class APFSFileSystem : public APFSObject {
 
   inline uint64_t rdo() const noexcept { return fs()->root_tree_oid; }
 
+  // Block of the root of the file extent tree of a sealed volume, which is a
+  // physical object, or 0 if the volume has none.
+  inline apfs_block_num fext_tree_block() const noexcept {
+    if (!sealed() || fs()->fext_tree_oid == 0 ||
+        !bit_is_set(fs()->fext_tree_type,
+                    uint32_t{APFS_OBJ_HEADER_PHYSICAL} << 16)) {
+      return 0;
+    }
+    return fs()->fext_tree_oid;
+  }
+
   void init_crypto_info();
 
   crypto_info_t _crypto{};
@@ -1127,6 +1145,11 @@ class APFSFileSystem : public APFSObject {
 
   inline bool encrypted() const noexcept {
     return !bit_is_set(fs()->flags, APFS_SB_UNENCRYPTED);
+  }
+
+  inline bool sealed() const noexcept {
+    return bit_is_set(fs()->incompatible_features,
+                      APFS_SB_INCOMPAT_SEALED_VOLUME);
   }
 
   inline bool case_sensitive() const noexcept {

@@ -201,6 +201,8 @@ typedef enum {
 #define APFS_BTNODE_ROOT 0x0001
 #define APFS_BTNODE_LEAF 0x0002
 #define APFS_BTNODE_FIXED_KV_SIZE 0x0004
+#define APFS_BTNODE_HASHED 0x0008
+#define APFS_BTNODE_NOHEADER 0x0010
 #define APFS_BTNODE_CHECK_KOFF_INVAL 0x8000
 
 typedef struct {
@@ -265,6 +267,8 @@ static_assert(sizeof(apfs_btree_info) == 0x28, "improperly aligned struct");
 #define APFS_SB_INCOMPAT_DATALESS_SNAPS 0x00000002LL
 #define APFS_SB_INCOMPAT_ENC_ROLLED 0x00000004LL
 #define APFS_SB_INCOMPAT_NORMALIZATION_INSENSITIVE 0x00000008LL
+#define APFS_SB_INCOMPAT_INCOMPLETE_RESTORE 0x00000010LL
+#define APFS_SB_INCOMPAT_SEALED_VOLUME 0x00000020LL
 
 // Flags for apfs_superblock.flags
 #define APFS_SB_UNENCRYPTED 0x00000001LL
@@ -328,8 +332,31 @@ typedef struct {
   uint16_t reserved;              // 0x3C6
   uint64_t root_to_xid;           // 0x3C8
   uint64_t er_state_oid;          // 0x3D0
+  uint64_t cloneinfo_id_epoch;    // 0x3D8
+  uint64_t cloneinfo_xid;         // 0x3E0
+  uint64_t snap_meta_ext_oid;     // 0x3E8
+  uint8_t volume_group_id[16];    // 0x3F0
+  uint64_t integrity_meta_oid;    // 0x400
+  uint64_t fext_tree_oid;         // 0x408
+  uint32_t fext_tree_type;        // 0x410
+  uint32_t reserved_type;         // 0x414
+  uint64_t reserved_oid;          // 0x418
 } apfs_superblock;
-static_assert(sizeof(apfs_superblock) == 0x3D8, "improperly aligned struct");
+static_assert(sizeof(apfs_superblock) == 0x420, "improperly aligned struct");
+
+// Records of the file extent tree of a sealed volume (apfs_superblock.fext_tree_oid),
+// which replaces the file extent records of the file system tree.
+typedef struct {
+  uint64_t private_id;    // 0x00
+  uint64_t logical_addr;  // 0x08
+} apfs_fext_tree_key;
+static_assert(sizeof(apfs_fext_tree_key) == 0x10, "improperly aligned struct");
+
+typedef struct {
+  uint64_t len_and_flags;   // 0x00 (as apfs_file_extent.len_and_flags)
+  uint64_t phys_block_num;  // 0x08
+} apfs_fext_tree_val;
+static_assert(sizeof(apfs_fext_tree_val) == 0x10, "improperly aligned struct");
 
 typedef enum {
   APFS_VOLUME_ROLE_NONE = 0x0000,

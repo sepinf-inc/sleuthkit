@@ -26,18 +26,136 @@ static apfs_block_num checked_find_paddr(APFSObjectBtreeNode& obj_root,
 
 APFSJObjTree::APFSJObjTree(const APFSPool& pool, apfs_block_num obj_omap,
                            uint64_t root_tree_oid,
-                           const APFSFileSystem::crypto_info_t& crypto)
+                           const APFSFileSystem::crypto_info_t& crypto,
+                           apfs_block_num fext_root)
     : _crypto{crypto},
       _obj_root{pool, obj_omap},
       _jobj_root{&_obj_root,
                  checked_find_paddr(_obj_root, root_tree_oid),
                  _crypto.key.get()},
-      _root_tree_oid{root_tree_oid} {}
+      _root_tree_oid{root_tree_oid},
+      _fext_root{fext_root} {}
 
 APFSJObjTree::APFSJObjTree(const APFSFileSystem& vol)
     : APFSJObjTree{vol.pool(),
                    APFSOmap{vol.pool(), vol.fs()->omap_oid}.root_block(),
-                   vol.rdo(), vol.crypto_info()} {}
+                   vol.rdo(), vol.crypto_info(), vol.fext_tree_block()} {}
+
+// A node of the file extent tree of a sealed volume. Its keys and values have
+// a fixed size, but its nodes may have no object header and, when they are
+// not leaves, have the hash of the child after its address, so it is read
+// here and not with the B-tree templates.
+namespace {
+class APFSFextNode : public APFSBlock {
+ public:
+  using APFSBlock::APFSBlock;
+
+  inline const char* data() const noexcept { return _storage.data(); }
+  inline size_t size() const noexcept { return _storage.size(); }
+};
+
+void fext_collect(const APFSPool& pool, apfs_block_num block, uint64_t id,
+                  APFSJObject& jobj, int depth) {
+  if (depth > 16) {
+    throw std::runtime_error("APFS: file extent tree is too deep");
+  }
+
+  const auto node = pool.template get_block<APFSFextNode>(block, pool, block);
+  const auto data = node->data();
+  const auto size = node->size();
+  const auto bn = reinterpret_cast<const apfs_btree_node*>(data);
+
+  const bool leaf = bit_is_set(bn->flags, APFS_BTNODE_LEAF);
+  const bool fixed = bit_is_set(bn->flags, APFS_BTNODE_FIXED_KV_SIZE);
+
+  const size_t toc = sizeof(apfs_btree_node) + bn->table_space_offset;
+  const size_t keys = toc + bn->table_space_length;
+  const size_t vals_end =
+      size - (bit_is_set(bn->flags, APFS_BTNODE_ROOT) ? sizeof(apfs_btree_info)
+                                                      : 0);
+  const size_t entry_size =
+      fixed ? sizeof(apfs_btentry_fixed) : sizeof(apfs_btentry_variable);
+  const size_t val_size = leaf ? sizeof(apfs_fext_tree_val) : sizeof(uint64_t);
+
+  if (keys > size || bn->key_count > (keys - toc) / entry_size) {
+    throw std::runtime_error("APFS: invalid file extent tree node");
+  }
+
+  // Key and value of an entry, checked to be inside the node
+  const auto entry = [&](uint32_t i, const apfs_fext_tree_key*& key,
+                         const char*& val) {
+    size_t koff, voff;
+    if (fixed) {
+      const auto t = reinterpret_cast<const apfs_btentry_fixed*>(data + toc);
+      koff = t[i].key_offset;
+      voff = t[i].val_offset;
+    } else {
+      const auto t =
+          reinterpret_cast<const apfs_btentry_variable*>(data + toc);
+      koff = t[i].key_offset;
+      voff = t[i].val_offset;
+    }
+
+    if (keys + koff + sizeof(apfs_fext_tree_key) > size || voff > vals_end ||
+        vals_end - voff + val_size > size) {
+      throw std::runtime_error("APFS: invalid file extent tree entry");
+    }
+
+    key = reinterpret_cast<const apfs_fext_tree_key*>(data + keys + koff);
+    val = data + vals_end - voff;
+  };
+
+  for (uint32_t i = 0; i < bn->key_count; i++) {
+    const apfs_fext_tree_key* key;
+    const char* val;
+    entry(i, key, val);
+
+    if (key->private_id > id) {
+      break;
+    }
+
+    if (leaf) {
+      if (key->private_id == id) {
+        const auto v = reinterpret_cast<const apfs_fext_tree_val*>(val);
+        jobj.add_extent(key->logical_addr, v->phys_block_num,
+                        bitfield_value(v->len_and_flags,
+                                       APFS_FILE_EXTENT_LEN_BITS,
+                                       APFS_FILE_EXTENT_LEN_SHIFT));
+      }
+      continue;
+    }
+
+    // The child has the keys from this one up to the next one: skip it if
+    // the next one is still before the extents wanted.
+    if (i + 1 < bn->key_count) {
+      const apfs_fext_tree_key* next;
+      const char* next_val;
+      entry(i + 1, next, next_val);
+      if (next->private_id < id) {
+        continue;
+      }
+    }
+
+    apfs_block_num child;
+    std::memcpy(&child, val, sizeof(child));
+    fext_collect(pool, child, id, jobj, depth + 1);
+  }
+}
+}  // namespace
+
+void APFSJObjTree::add_fext_extents(uint64_t oid, APFSJObject& jobj) const {
+  if (_fext_root == 0 || !jobj.extents().empty()) {
+    return;
+  }
+
+  fext_collect(_obj_root.pool(), _fext_root, oid, jobj, 0);
+}
+
+APFSJObject APFSJObjTree::obj(uint64_t oid) const {
+  APFSJObject jobj{jobjs(oid)};
+  add_fext_extents(oid, jobj);
+  return jobj;
+}
 
 void APFSJObjTree::set_snapshot(uint64_t snap_xid) {
   _obj_root.snapshot(snap_xid);
@@ -233,6 +351,7 @@ APFSJObjTree::iterator::iterator(const APFSJObjTree* tree, uint64_t oid)
     : _tree{tree} {
   auto range = tree->jobjs(oid);
   _jobj = {range};
+  tree->add_fext_extents(oid, _jobj);
   _next = std::move(range.second);
 }
 
@@ -256,6 +375,7 @@ APFSJObjTree::iterator& APFSJObjTree::iterator::operator++() {
       });
 
   _jobj = {_next, end};
+  _tree->add_fext_extents(key->oid(), _jobj);
   _next = std::move(end);
 
   return (*this);
